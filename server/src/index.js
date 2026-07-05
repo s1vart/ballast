@@ -1,25 +1,70 @@
 import 'dotenv/config';
 import express from 'express';
-import cors from 'cors';
+import { timingSafeEqual } from 'node:crypto';
 import { plaid } from './plaidClient.js';
 import { saveItem, getItems, setCursor } from './store.js';
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+// --- Fail-fast env validation -----------------------------------------------
+// This server guards real bank data. Refuse to boot half-configured — an unset
+// API_KEY must never mean "auth disabled".
+const REQUIRED = {
+  API_KEY: (v) => !!v && v.length >= 32 && !v.startsWith('change-me'),
+  DATA_KEY: (v) => !!v && /^[0-9a-f]{64}$/i.test(v),
+  PLAID_CLIENT_ID: (v) => !!v && !v.startsWith('your_'),
+  PLAID_SECRET: (v) => !!v && !v.startsWith('your_'),
+};
+for (const [name, ok] of Object.entries(REQUIRED)) {
+  if (!ok(process.env[name])) {
+    console.error(
+      `FATAL: ${name} is missing or invalid in server/.env — see .env.example.` +
+        (name === 'API_KEY' || name === 'DATA_KEY' ? '  Generate one with: openssl rand -hex 32' : '')
+    );
+    process.exit(1);
+  }
+}
 
-// --- Simple shared-secret guard -------------------------------------------
-// This backend can read your bank balances/transactions, so it must be private.
-// The app sends API_KEY in the `x-api-key` header on every request.
+const app = express();
+// No CORS middleware on purpose: the only client is the native app (not subject
+// to CORS), so browser origins get no permission to call this API at all.
+
+app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// --- Auth guard with brute-force lockout -------------------------------------
+// Every request (except /health) must present the shared API key. Repeated
+// failures from an IP get locked out — keys shouldn't be guessable on the LAN.
+const FAIL_LIMIT = 10;
+const LOCKOUT_MS = 15 * 60 * 1000;
+const failures = new Map(); // ip -> { count, lockedUntil }
+
 app.use((req, res, next) => {
   if (req.path === '/health') return next();
-  if (req.get('x-api-key') !== process.env.API_KEY) {
+
+  const ip = req.ip;
+  const rec = failures.get(ip);
+  if (rec && rec.lockedUntil > Date.now()) {
+    return res.status(429).json({ error: 'too many failed attempts — try later' });
+  }
+
+  const given = Buffer.from(req.get('x-api-key') ?? '');
+  const expected = Buffer.from(process.env.API_KEY);
+  const ok = given.length === expected.length && timingSafeEqual(given, expected);
+
+  if (!ok) {
+    const count = (rec?.count ?? 0) + 1;
+    failures.set(ip, {
+      count,
+      lockedUntil: count >= FAIL_LIMIT ? Date.now() + LOCKOUT_MS : 0,
+    });
+    console.warn(`auth failure from ${ip} (attempt ${count})`);
     return res.status(401).json({ error: 'unauthorized' });
   }
+
+  failures.delete(ip);
   next();
 });
 
-app.get('/health', (_req, res) => res.json({ ok: true }));
+// Body parsing AFTER auth: unauthenticated callers never reach the JSON parser.
+app.use(express.json({ limit: '100kb' }));
 
 // 1) Create a short-lived link_token the mobile app uses to open Plaid Link.
 //    You must fetch a fresh one every time you open Link.
@@ -43,7 +88,8 @@ app.post('/link/token', async (req, res) => {
 });
 
 // 2) Exchange the public_token from Link for a long-lived access_token.
-//    The access_token is stored server-side ONLY and never sent to the phone.
+//    The access_token is stored server-side ONLY (encrypted at rest) and never
+//    sent to the phone.
 app.post('/item/exchange', async (req, res) => {
   try {
     const { public_token } = req.body;
@@ -126,14 +172,28 @@ app.get('/transactions/sync', async (_req, res) => {
   }
 });
 
-// Plaid returns rich error bodies — surface the useful bits.
+// Plaid returns rich error bodies — surface the useful bits (to the
+// authenticated caller only; every route above sits behind the guard).
 function fail(res, e) {
   const data = e?.response?.data;
   console.error('Plaid error:', data || e.message);
   res.status(500).json({ error: data?.error_message || e.message, code: data?.error_code });
 }
 
+// Terminal error handler — no stack traces to callers, ever.
+app.use((err, _req, res, _next) => {
+  console.error('request error:', err.message);
+  res.status(err.status || 500).json({ error: 'request failed' });
+});
+
 const port = process.env.PORT || 8080;
-app.listen(port, () =>
-  console.log(`Ballast server → http://localhost:${port}  (PLAID_ENV=${process.env.PLAID_ENV || 'sandbox'})`)
+// 0.0.0.0 (default) = reachable from the LAN, which the phone workflow needs.
+// Behind a tunnel (cloudflared)? Set HOST=127.0.0.1 so ONLY the tunnel can reach it.
+const host = process.env.HOST || '0.0.0.0';
+app.listen(port, host, () =>
+  console.log(
+    `Ballast server → http://${host}:${port}  ` +
+      `(${host === '0.0.0.0' ? 'ALL interfaces — LAN-reachable' : 'bound to ' + host})  ` +
+      `PLAID_ENV=${process.env.PLAID_ENV || 'sandbox'}`
+  )
 );
