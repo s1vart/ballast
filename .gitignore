@@ -1,0 +1,14 @@
+# secrets & local data — NEVER commit these
+.env
+server/data.json
+
+# deps / build
+node_modules/
+app/.expo/
+app/dist/
+app/android/
+app/ios/
+
+# misc
+.DS_Store
+*.log

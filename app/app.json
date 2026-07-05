@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Ballast",
+    "slug": "ballast",
+    "scheme": "ballast",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "com.yourname.ballast",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.yourname.ballast"
+    },
+    "plugins": [
+      "expo-sqlite"
+    ]
+  }
+}
