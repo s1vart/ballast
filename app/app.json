@@ -8,11 +8,11 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
-      "bundleIdentifier": "com.yourname.ballast",
+      "bundleIdentifier": "com.wekivasoftware.ballast",
       "supportsTablet": true
     },
     "android": {
-      "package": "com.yourname.ballast"
+      "package": "com.wekivasoftware.ballast"
     },
     "plugins": [
       "expo-sqlite"

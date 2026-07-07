@@ -28,7 +28,7 @@ Real, working **Plaid** bank-linking for the Ballast budgeting app, in two parts
 ## 1 · Plaid dashboard
 
 1. Copy your **`client_id`** and **Sandbox `secret`** from **Developers → Keys**.
-2. Under **Link → API / allowed** settings, add your **Android package name** (use `com.yourname.ballast`, or whatever you set in `app/app.json`). This must match, or Android Link fails.
+2. Under **Link → API / allowed** settings, add your **Android package name** (use `com.wekivasoftware.ballast`, or whatever you set in `app/app.json`). This must match, or Android Link fails.
 
 ---
 
