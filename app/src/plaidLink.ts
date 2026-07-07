@@ -1,31 +1,40 @@
-import { create, open, LinkSuccess, LinkExit } from 'react-native-plaid-link-sdk';
+import {
+  createPlaidLinkSession,
+  LinkSuccess,
+  LinkExit,
+} from 'react-native-plaid-link-sdk';
 import { getLinkToken, exchangePublicToken } from './api';
 import { CLIENT_USER_ID } from './config';
 
 /**
- * Opens Plaid Link, then exchanges the resulting public_token on the backend.
+ * Opens Plaid Link (SDK v13 session API), then exchanges the resulting
+ * public_token on the backend.
  *
  * ⚠️ Uses a native module — this will NOT run in Expo Go. You need a
  * development build (see README: `npx expo prebuild` + `npx expo run:android`).
  */
-export function connectBank(): Promise<{ item_id: string; institution: string | null }> {
+export async function connectBank(): Promise<{ item_id: string; institution: string | null }> {
+  const linkToken = await getLinkToken(CLIENT_USER_ID);
+
   return new Promise((resolve, reject) => {
-    getLinkToken(CLIENT_USER_ID)
-      .then((linkToken) => {
-        // Preload Link, then open it.
-        create({ token: linkToken });
-        open({
-          onSuccess: (success: LinkSuccess) => {
-            // success.publicToken is short-lived; exchange it server-side immediately.
-            exchangePublicToken(success.publicToken).then(resolve).catch(reject);
-          },
-          onExit: (exit: LinkExit) => {
-            const err = exit.error as { errorMessage?: string; message?: string } | undefined;
-            if (err) reject(new Error(err.errorMessage ?? err.message ?? 'Link error'));
-            else reject(new Error('cancelled'));
-          },
-        });
-      })
+    createPlaidLinkSession({
+      token: linkToken,
+      onSuccess: (success: LinkSuccess) => {
+        // success.publicToken is short-lived; exchange it server-side immediately.
+        exchangePublicToken(success.publicToken).then(resolve).catch(reject);
+      },
+      onExit: (exit: LinkExit) => {
+        if (exit.error) {
+          reject(new Error(exit.error.displayMessage ?? exit.error.errorMessage ?? 'Link error'));
+        } else {
+          reject(new Error('cancelled'));
+        }
+      },
+      onEvent: () => {
+        // required by the SDK; useful for analytics, not needed here
+      },
+    })
+      .then((session) => session.open())
       .catch(reject);
   });
 }
