@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { SafeAreaView, View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Screen } from './src/components/Screen';
 import { ConnectBankButton } from './src/components/ConnectBankButton';
 import { AccountsList } from './src/components/AccountsList';
 import { getAccounts } from './src/db';
@@ -12,6 +14,14 @@ import type { Account } from './src/types';
  * This is the foundation to drop the full Ballast UI (from the prototype) on top of.
  */
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <Home />
+    </SafeAreaProvider>
+  );
+}
+
+function Home() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const refresh = async () => setAccounts(await getAccounts());
 
@@ -22,7 +32,7 @@ export default function App() {
   const total = accounts.reduce((sum, a) => sum + (a.balance ?? 0), 0);
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <Screen>
       <StatusBar style="dark" />
       <View style={styles.header}>
         <Text style={styles.brand}>Ballast</Text>
@@ -35,15 +45,14 @@ export default function App() {
         <AccountsList accounts={accounts} />
         <ConnectBankButton onConnected={refresh} />
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F6F7F9' },
   header: { padding: 20, paddingTop: 16 },
   brand: { fontSize: 14, fontWeight: '700', color: '#0E5B57' },
   total: { fontSize: 40, fontWeight: '800', color: '#0E1726', marginTop: 6, letterSpacing: -1 },
   totalLabel: { fontSize: 13, color: '#8A8578', marginTop: 2 },
-  body: { flex: 1, paddingHorizontal: 20, paddingBottom: 20 },
+  body: { flex: 1, paddingHorizontal: 20, paddingBottom: 8 },
 });
