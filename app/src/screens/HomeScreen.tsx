@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
-import { categoryPalette, colors, money, radius } from '../theme';
+import { colors, money, radius } from '../theme';
 import { Card, Money, SectionHead } from '../components/ui';
+import { RecurringManager } from '../components/RecurringManager';
 import { useData } from '../data/DataContext';
 import type { Recurring } from '../logic/finance';
 import type { Account } from '../types';
@@ -130,7 +131,6 @@ export function HomeScreen() {
     return [...later, ...wrapped].slice(0, 4);
   }, [sortedBills, todayDate]);
 
-  const billsTotal = useMemo(() => sortedBills.reduce((s, b) => s + b.amount, 0), [sortedBills]);
 
   // Chart geometry: days map across x 6..306, balances scale into y with 12px pad.
   const chart = useMemo(() => {
@@ -272,24 +272,8 @@ export function HomeScreen() {
         </Card>
       )}
 
-      {/* All-bills bottom sheet */}
-      <Modal visible={showAll} transparent animationType="slide" onRequestClose={() => setShowAll(false)}>
-        <View style={styles.modalRoot}>
-          <Pressable style={styles.modalDismiss} onPress={() => setShowAll(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.grab} />
-            <Text style={styles.sheetTitle}>All recurring bills</Text>
-            <Text style={styles.sheetSub}>
-              {money(billsTotal)} per month · {sortedBills.length} bills
-            </Text>
-            <ScrollView style={styles.sheetList} showsVerticalScrollIndicator={false}>
-              {sortedBills.map((b, i) => (
-                <BillRow key={b.id} bill={b} monthLabel={monthLabelFor(b)} last={i === sortedBills.length - 1} />
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      {/* Full add/edit/delete bills manager */}
+      <RecurringManager visible={showAll} onClose={() => setShowAll(false)} />
     </ScrollView>
   );
 }
@@ -404,20 +388,4 @@ const styles = StyleSheet.create({
   billName: { fontSize: 13.5, fontWeight: '600', color: colors.ink },
   billCat: { fontSize: 11, fontWeight: '500', color: colors.faint, marginTop: 2 },
   billAmt: { fontSize: 14, fontWeight: '700', letterSpacing: -0.2, color: colors.ink },
-
-  modalRoot: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
-  modalDismiss: { flex: 1 },
-  sheet: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: radius.sheet,
-    borderTopRightRadius: radius.sheet,
-    paddingTop: 8,
-    paddingHorizontal: 18,
-    paddingBottom: 22,
-    maxHeight: '80%',
-  },
-  grab: { width: 38, height: 4, borderRadius: 3, backgroundColor: colors.line, alignSelf: 'center', marginBottom: 14 },
-  sheetTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3, color: colors.ink },
-  sheetSub: { fontSize: 12, fontWeight: '500', color: colors.inkSoft, marginTop: 3, marginBottom: 6 },
-  sheetList: { marginTop: 6 },
 });

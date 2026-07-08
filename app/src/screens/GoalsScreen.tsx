@@ -1,8 +1,9 @@
-import React from 'react';
-import { ScrollView, View, Text, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { ScrollView, View, Text, StyleSheet, Pressable } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { colors, money } from '../theme';
 import { Card, Money, SectionHead, HBar } from '../components/ui';
+import { GoalEditor } from '../components/GoalEditor';
 import { useData } from '../data/DataContext';
 import type { Goal } from '../db';
 
@@ -85,6 +86,9 @@ function completionLabel(g: Goal, today: Date): string {
 
 export function GoalsScreen() {
   const { goals, breakdown, paycheckConfig, today } = useData();
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorGoal, setEditorGoal] = useState<Goal | null>(null);
+  const openEditor = (g: Goal | null) => { setEditorGoal(g); setEditorOpen(true); };
 
   const investGoals = goals.filter((g) => g.kind === 'goal');
   const retirement = goals.find((g) => g.kind === 'retirement');
@@ -96,14 +100,15 @@ export function GoalsScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.firstHead}>
-        <SectionHead title="Investment goals" action="+ New" />
+        <SectionHead title="Investment goals" action="+ New" onAction={() => openEditor(null)} />
       </View>
 
       {investGoals.map((g, i) => {
         const Glyph = GOAL_GLYPHS[i % GOAL_GLYPHS.length];
         const pct = g.target > 0 ? (g.current / g.target) * 100 : 0;
         return (
-          <Card key={g.id} style={styles.goalCard}>
+          <Pressable key={g.id} onPress={() => openEditor(g)}>
+          <Card style={styles.goalCard}>
             <View style={styles.headRow}>
               <View style={[styles.iconSq, { backgroundColor: tint(g.color) }]}>
                 <Glyph color={g.color} />
@@ -128,6 +133,7 @@ export function GoalsScreen() {
               <Text style={styles.footText}>{completionLabel(g, today)}</Text>
             </View>
           </Card>
+          </Pressable>
         );
       })}
 
@@ -158,6 +164,8 @@ export function GoalsScreen() {
           </Card>
         </>
       ) : null}
+
+      <GoalEditor visible={editorOpen} goal={editorGoal} onClose={() => setEditorOpen(false)} />
     </ScrollView>
   );
 }

@@ -9,10 +9,12 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { colors, radius, money } from '../theme';
+import { colors, radius, money, ymd } from '../theme';
 import { Card, Money, SectionHead, HBar, Swatch } from '../components/ui';
+import { AddIncomeSheet } from '../components/AddIncomeSheet';
 import { useData } from '../data/DataContext';
 import type { PaycheckConfig } from '../logic/finance';
 
@@ -63,9 +65,10 @@ const TAX_MAX = 60;
 type EditField = 'salary' | 'tax' | null;
 
 export function PaycheckScreen() {
-  const { paycheckConfig, breakdown, updatePaycheck } = useData();
+  const { paycheckConfig, breakdown, updatePaycheck, income, projectedAnnualIncome, addIncome, deleteIncome, today } = useData();
   const [editing, setEditing] = useState<EditField>(null);
   const [draft, setDraft] = useState('');
+  const [addingIncome, setAddingIncome] = useState(false);
 
   const contribPct = paycheckConfig.contribPct;
   // Visual scale of the stepper: contribPct out of CONTRIB_MAX, as 0–100 for HBar.
@@ -212,7 +215,7 @@ export function PaycheckScreen() {
         </View>
       </Card>
 
-      <SectionHead title="Income" />
+      <SectionHead title="Income this year" action="+ Add" onAction={() => setAddingIncome(true)} />
       <View style={styles.incGrid}>
         <Pressable
           onPress={openSalary}
@@ -238,7 +241,40 @@ export function PaycheckScreen() {
             <Text style={styles.incCaption}>applied after 401(k)</Text>
           </Card>
         </Pressable>
+        {income.map((i) => (
+          <Pressable
+            key={i.id}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${i.label}`}
+            onPress={() =>
+              Alert.alert('Delete income', `Remove "${i.label}" (${money(i.amount)})?`, [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => deleteIncome(i.id) },
+              ])
+            }
+            style={({ pressed }) => [styles.incPress, pressed && styles.pressedDim]}
+          >
+            <Card style={styles.incCard}>
+              <Text style={styles.incLabel}>{i.label}</Text>
+              <Money style={styles.incValue}>{money(i.amount)}</Money>
+              <Text style={styles.incCaption}>{i.kind === '1099' ? '1099' : i.kind.charAt(0).toUpperCase() + i.kind.slice(1)} · {i.date.slice(0, 7)}</Text>
+            </Card>
+          </Pressable>
+        ))}
+        <View style={styles.incPress}>
+          <Card style={styles.incCard}>
+            <Text style={styles.incLabel}>Projected {today.getFullYear()}</Text>
+            <Money style={[styles.incValue, { color: colors.teal }]}>{money(projectedAnnualIncome)}</Money>
+            <Text style={styles.incCaption}>gross total</Text>
+          </Card>
+        </View>
       </View>
+
+      <AddIncomeSheet
+        visible={addingIncome}
+        onClose={() => setAddingIncome(false)}
+        onAdd={async (f) => { await addIncome({ ...f, date: ymd(today) }); setAddingIncome(false); }}
+      />
 
       {/* edit modal (salary / tax) */}
       <Modal
@@ -390,8 +426,8 @@ const styles = StyleSheet.create({
   matchBold: { fontWeight: '800', color: colors.green, fontSize: 12 },
 
   // income grid (proto .incgrid / .inc)
-  incGrid: { flexDirection: 'row', gap: 11 },
-  incPress: { flex: 1 },
+  incGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 11 },
+  incPress: { width: '48%' },
   incCard: { paddingVertical: 14, paddingHorizontal: 15 },
   incLabel: { fontSize: 11, color: colors.greige, fontWeight: '600' },
   incValue: {

@@ -53,3 +53,8 @@ export const money = (n: number | null | undefined, opts?: { sign?: boolean }): 
   const sign = opts?.sign && n > 0 ? '+' : n < 0 ? '−' : '';
   return `${sign}$${Math.abs(Math.round(n)).toLocaleString('en-US')}`;
 };
+
+/** Serialize a Date to yyyy-mm-dd using LOCAL components (NOT toISOString, which is UTC
+ *  and can shift the day/month/year across timezone boundaries). */
+export const ymd = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

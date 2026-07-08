@@ -34,6 +34,16 @@ export interface Goal {
   kind: 'goal' | 'retirement';
 }
 
+export type IncomeKind = 'bonus' | '1099' | 'other';
+
+export interface Income {
+  id: string;
+  kind: IncomeKind;
+  label: string;
+  amount: number;
+  date: string; // ISO yyyy-mm-dd
+}
+
 export async function getDb() {
   if (_db) return _db;
   _db = await SQLite.openDatabaseAsync('ballast.db');
@@ -76,6 +86,13 @@ export async function getDb() {
       monthly REAL NOT NULL,
       color   TEXT NOT NULL,
       kind    TEXT NOT NULL DEFAULT 'goal'
+    );
+    CREATE TABLE IF NOT EXISTS income (
+      id     TEXT PRIMARY KEY NOT NULL,
+      kind   TEXT NOT NULL,
+      label  TEXT NOT NULL,
+      amount REAL NOT NULL,
+      date   TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY NOT NULL,
@@ -132,6 +149,19 @@ async function seedIfEmpty(db: SQLite.SQLiteDatabase) {
     for (const [id, name, target, current, monthly, color, kind] of gs) {
       await db.runAsync('INSERT INTO goals (id,name,target,current,monthly,color,kind) VALUES (?,?,?,?,?,?,?);', [
         id, name, target, current, monthly, color, kind,
+      ]);
+    }
+  }
+  const incCount = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) n FROM income;');
+  if ((incCount?.n ?? 0) === 0) {
+    const yr = new Date().getFullYear();
+    const incomes: Array<[IncomeKind, string, number, string]> = [
+      ['bonus', 'Q1 bonus', 6000, `${yr}-03-15`],
+      ['1099', '1099 side income', 4200, `${yr}-06-01`],
+    ];
+    for (const [kind, label, amount, date] of incomes) {
+      await db.runAsync('INSERT INTO income (id,kind,label,amount,date) VALUES (?,?,?,?,?);', [
+        `inc-${kind}-${date}`, kind, label, amount, date,
       ]);
     }
   }
@@ -206,15 +236,73 @@ export async function getRecentTxns(limit = 20): Promise<Txn[]> {
   return db.getAllAsync<Txn>('SELECT * FROM txns ORDER BY date DESC, id DESC LIMIT ?;', [limit]);
 }
 
-// ---------- recurring / goals / settings ----------
+// ---------- recurring bills (CRUD) ----------
 export async function getRecurring(): Promise<Recurring[]> {
   const db = await getDb();
   return db.getAllAsync<Recurring>('SELECT * FROM recurring ORDER BY dayOfMonth;');
 }
 
+export async function addRecurring(name: string, category: string, amount: number, dayOfMonth: number) {
+  const db = await getDb();
+  await db.runAsync('INSERT INTO recurring (id,name,category,amount,dayOfMonth) VALUES (?,?,?,?,?);', [
+    `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, category, amount, dayOfMonth,
+  ]);
+}
+
+export async function updateRecurring(id: string, f: { name: string; category: string; amount: number; dayOfMonth: number }) {
+  const db = await getDb();
+  await db.runAsync('UPDATE recurring SET name=?, category=?, amount=?, dayOfMonth=? WHERE id=?;', [
+    f.name, f.category, f.amount, f.dayOfMonth, id,
+  ]);
+}
+
+export async function deleteRecurring(id: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM recurring WHERE id=?;', [id]);
+}
+
+// ---------- goals (CRUD) ----------
 export async function getGoals(): Promise<Goal[]> {
   const db = await getDb();
   return db.getAllAsync<Goal>('SELECT * FROM goals;');
+}
+
+export async function addGoal(f: { name: string; target: number; current: number; monthly: number; color: string }) {
+  const db = await getDb();
+  await db.runAsync(
+    "INSERT INTO goals (id,name,target,current,monthly,color,kind) VALUES (?,?,?,?,?,?,'goal');",
+    [`goal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, f.name, f.target, f.current, f.monthly, f.color]
+  );
+}
+
+export async function updateGoal(id: string, f: { name: string; target: number; current: number; monthly: number }) {
+  const db = await getDb();
+  await db.runAsync('UPDATE goals SET name=?, target=?, current=?, monthly=? WHERE id=?;', [
+    f.name, f.target, f.current, f.monthly, id,
+  ]);
+}
+
+export async function deleteGoal(id: string) {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM goals WHERE id=? AND kind='goal';", [id]); // never delete the 401(k) row
+}
+
+// ---------- income (bonuses / 1099 / other) ----------
+export async function getIncome(): Promise<Income[]> {
+  const db = await getDb();
+  return db.getAllAsync<Income>('SELECT * FROM income ORDER BY date DESC;');
+}
+
+export async function addIncome(f: { kind: IncomeKind; label: string; amount: number; date: string }) {
+  const db = await getDb();
+  await db.runAsync('INSERT INTO income (id,kind,label,amount,date) VALUES (?,?,?,?,?);', [
+    `inc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, f.kind, f.label, f.amount, f.date,
+  ]);
+}
+
+export async function deleteIncome(id: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM income WHERE id=?;', [id]);
 }
 
 export async function getPaycheckConfig(): Promise<PaycheckConfig> {
