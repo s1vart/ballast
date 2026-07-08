@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Account } from '../types';
-import { isCash, isLiability } from '../types';
+import { isCash, isLiability, isInvestment } from '../types';
 import * as db from '../db';
 import {
   paycheck, projectEndOfMonth, monthTrajectory, daysLeftInMonth,
@@ -42,7 +42,8 @@ export interface BallastData {
   // derived
   totalCash: number;    // depository accounts only (excludes card/loan debt)
   cardDebt: number;     // sum of credit/loan balances owed
-  netWorth: number;     // totalCash - cardDebt
+  investmentsTotal: number; // brokerage + retirement value (asset, not cash)
+  netWorth: number;     // totalCash + investments - cardDebt
   checkingBalance: number;
   monthlyNetIncome: number;
   projection: number;
@@ -181,7 +182,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const pendingByAccount: Record<string, number> = {};
     for (const t of transactions) if (t.pending && t.accountId) pendingByAccount[t.accountId] = (pendingByAccount[t.accountId] ?? 0) + t.amount;
     const cardDebt = accounts.filter(isLiability).reduce((s, a) => s + (a.balance ?? 0) + (pendingByAccount[a.id] ?? 0), 0);
-    const netWorth = totalCash - cardDebt;
+    const investmentsTotal = accounts.filter(isInvestment).reduce((s, a) => s + (a.balance ?? 0), 0);
+    const netWorth = totalCash + investmentsTotal - cardDebt;
     const checking = accounts.find((a) => (a.subtype ?? '').includes('checking'));
     const checkingBalance = checking?.balance ?? totalCash;
     const bills = recurring.reduce((s, b) => s + b.amount, 0);
@@ -211,7 +213,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       loading, onboarded, profile,
       accounts, categories, spentByCategory, avgSpendByCategory, transactions, pendingByAccount, recurring, goals, income,
       paycheckConfig, breakdown, savingsTransfer,
-      totalCash, cardDebt, netWorth, checkingBalance, monthlyNetIncome,
+      totalCash, cardDebt, investmentsTotal, netWorth, checkingBalance, monthlyNetIncome,
       projection: projectEndOfMonth(input),
       trajectory: monthTrajectory(input, recurring, daysInMonth, today.getDate()),
       daysLeft: daysLeftInMonth(today),

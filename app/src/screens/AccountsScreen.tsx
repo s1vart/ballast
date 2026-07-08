@@ -6,7 +6,7 @@ import { Card, Money, SectionHead, Swatch } from '../components/ui';
 import { useFeedback } from '../components/Feedback';
 import { AccountEditor } from '../components/AccountEditor';
 import { useData } from '../data/DataContext';
-import { Account, isCash, isLiability, displayName } from '../types';
+import { Account, isCash, isLiability, isInvestment, isRetirement, displayName } from '../types';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -42,6 +42,15 @@ function PlusSquareGlyph({ color }: { color: string }) {
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
       <Rect x={4} y={4} width={16} height={16} rx={4} stroke={color} strokeWidth={1.6} />
       <Path d="M12 8v8M8 12h8" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function InvestGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path d="M4 18l5-5 3 3 7-8" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M15 8h4v4" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -88,7 +97,7 @@ function AccountIcon({ kind }: { kind: AcctKind }) {
 export function AccountsScreen() {
   const {
     accounts, categories, recurring, breakdown, savingsTransfer, totalCash, cardDebt, netWorth,
-    checkingBalance, projection, today, syncBank, linkBank, pendingByAccount,
+    checkingBalance, projection, today, syncBank, linkBank, pendingByAccount, investmentsTotal,
   } = useData();
   const { toast } = useFeedback();
   const [linking, setLinking] = useState(false);
@@ -96,6 +105,7 @@ export function AccountsScreen() {
 
   const cashAccounts = useMemo(() => accounts.filter(isCash), [accounts]);
   const cardAccounts = useMemo(() => accounts.filter(isLiability), [accounts]);
+  const investmentAccounts = useMemo(() => accounts.filter(isInvestment), [accounts]);
 
   const [syncing, setSyncing] = useState(false);
 
@@ -243,10 +253,51 @@ export function AccountsScreen() {
         </>
       ) : null}
 
+      {/* Investments (asset, not cash) */}
+      {investmentAccounts.length > 0 ? (
+        <>
+          <SectionHead title="Investments" />
+          <Text style={styles.sectionTotal}>
+            <Money style={styles.sectionTotalBold}>{money(investmentsTotal)}</Money>
+            {`  across ${investmentAccounts.length} account${investmentAccounts.length === 1 ? '' : 's'}`}
+          </Text>
+          <Card style={styles.acctCard}>
+            {investmentAccounts.map((a, i) => {
+              const retire = isRetirement(a);
+              return (
+                <Pressable
+                  key={a.id}
+                  onPress={() => setEditingAccount(a)}
+                  style={({ pressed }) => [styles.acctRow, i === investmentAccounts.length - 1 && styles.acctRowLast, pressed && styles.acctRowPressed]}
+                >
+                  <View style={[styles.acctIcon, { backgroundColor: retire ? colors.indigo + '1A' : colors.blueBg }]}>
+                    <InvestGlyph color={retire ? colors.indigo : colors.blue} />
+                  </View>
+                  <View style={styles.acctMain}>
+                    <Text style={styles.acctName} numberOfLines={1}>{displayName(a)}{a.mask ? ` ••${a.mask}` : ''}</Text>
+                    <Text style={styles.acctCaption} numberOfLines={1}>
+                      {`${a.institution ?? 'Investments'} · ${capitalize(a.subtype ?? a.type ?? 'brokerage')}`}
+                    </Text>
+                  </View>
+                  <View style={styles.acctRight}>
+                    <Money style={styles.acctBalance}>{money(a.balance)}</Money>
+                    <View style={[styles.badge, retire ? styles.badgeRetire : styles.badgeBroker]}>
+                      <Text style={[styles.badgeText, retire ? styles.badgeTextRetire : styles.badgeTextBroker]}>
+                        {retire ? 'Retirement' : 'Brokerage'}
+                      </Text>
+                    </View>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </Card>
+        </>
+      ) : null}
+
       {/* Net worth line */}
-      {cardAccounts.length > 0 ? (
+      {(cardAccounts.length > 0 || investmentAccounts.length > 0) ? (
         <View style={styles.netRow}>
-          <Text style={styles.netLabel}>Net (cash − cards)</Text>
+          <Text style={styles.netLabel}>Net worth</Text>
           <Money style={[styles.netValue, { color: netWorth >= 0 ? colors.ink : colors.bad }]}>{money(netWorth)}</Money>
         </View>
       ) : null}
@@ -305,6 +356,10 @@ const styles = StyleSheet.create({
   cardOwedLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600' },
   cardOwed: { color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.4 },
   cardPending: { color: 'rgba(255,255,255,0.75)', fontSize: 10.5, fontWeight: '600', marginTop: 2 },
+  badgeRetire: { backgroundColor: colors.indigo + '1A' },
+  badgeTextRetire: { color: colors.indigo },
+  badgeBroker: { backgroundColor: colors.blueBg },
+  badgeTextBroker: { color: colors.blue },
   netRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginHorizontal: 2 },
   netLabel: { fontSize: 13.5, fontWeight: '700', color: colors.inkMid },
   netValue: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
