@@ -152,6 +152,23 @@ app.get('/accounts', async (_req, res) => {
 
 // 4) Incremental transaction sync (cursor-based). Returns only what changed
 //    since the last call, per item. Persist the cursor so next time is cheap.
+// Trim Plaid's large transaction object down to what the app stores.
+function trimTxn(t) {
+  const pfc = t.personal_finance_category || {};
+  return {
+    id: t.transaction_id,
+    account_id: t.account_id,
+    name: t.name,
+    merchant: t.merchant_name || t.name,
+    amount: t.amount,                 // Plaid sign: + = money OUT (spend), - = money in
+    date: t.date,
+    pending: !!t.pending,
+    pending_transaction_id: t.pending_transaction_id || null,
+    pfc: pfc.primary || null,         // e.g. FOOD_AND_DRINK, TRANSPORTATION
+    pfc_detailed: pfc.detailed || null,
+  };
+}
+
 app.get('/transactions/sync', async (_req, res) => {
   try {
     const added = [], modified = [], removed = [];
@@ -160,9 +177,9 @@ app.get('/transactions/sync', async (_req, res) => {
       let hasMore = true;
       while (hasMore) {
         const r = await plaid.transactionsSync({ access_token: item.access_token, cursor });
-        added.push(...r.data.added);
-        modified.push(...r.data.modified);
-        removed.push(...r.data.removed);
+        added.push(...r.data.added.map(trimTxn));
+        modified.push(...r.data.modified.map(trimTxn));
+        removed.push(...r.data.removed.map((x) => x.transaction_id));
         cursor = r.data.next_cursor;
         hasMore = r.data.has_more;
       }

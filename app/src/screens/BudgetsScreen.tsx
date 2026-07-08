@@ -17,6 +17,7 @@ import Svg, { Path } from 'react-native-svg';
 import { colors, paletteFor, radius, money } from '../theme';
 import { Card, Money, SectionHead, HBar, ProgressRing } from '../components/ui';
 import { EnvelopeManager } from '../components/EnvelopeManager';
+import { TransactionsList } from '../components/TransactionsList';
 import { useData } from '../data/DataContext';
 import type { Category } from '../db';
 
@@ -150,6 +151,8 @@ export function BudgetsScreen(): React.ReactElement {
             ))}
           </View>
         )}
+
+        <TransactionsList />
       </ScrollView>
 
       <EnvelopeManager visible={managing} onClose={() => setManaging(false)} />

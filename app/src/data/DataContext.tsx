@@ -8,7 +8,7 @@ import {
 } from '../logic/finance';
 import { TaxEstimate } from '../logic/tax';
 import { summarizeProfile } from '../logic/profile';
-import { fetchPlaidAccounts } from '../api';
+import { fetchPlaidAccounts, fetchTxnSync } from '../api';
 import { connectBank } from '../plaidLink';
 
 export interface TaxSummary {
@@ -30,6 +30,8 @@ export interface BallastData {
   accounts: Account[];
   categories: db.Category[];
   spentByCategory: Record<string, number>;
+  transactions: db.BankTxn[];
+  pendingByAccount: Record<string, number>;
   recurring: Recurring[];
   goals: db.Goal[];
   income: db.Income[];
@@ -60,6 +62,8 @@ export interface BallastData {
   addCategory: (name: string, limit: number) => Promise<void>;
   updateCategory: (id: string, f: { name: string; monthlyLimit: number }) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
+  syncTransactions: () => Promise<number>;
+  reassignTransaction: (id: string, envelopeId: string | null) => Promise<void>;
   syncBank: () => Promise<number>;
   linkBank: () => Promise<{ institution: string | null; count: number }>;
   restartOnboarding: () => Promise<void>;
@@ -87,19 +91,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [income, setIncome] = useState<db.Income[]>([]);
   const [paycheckConfig, setPc] = useState<PaycheckConfig>({ grossAnnual: 98000, contribPct: 8, matchPct: 4, taxPct: 26 });
   const [savingsTransfer, setTransfer] = useState(0);
+  const [transactions, setTransactions] = useState<db.BankTxn[]>([]);
 
   const refresh = useCallback(async () => {
-    const [ob, prof, acc, cats, spent, rec, gls, inc, pc, tr] = await Promise.all([
-      db.isOnboarded(), db.getProfile(), db.getAccounts(), db.getCategories(), db.getMonthSpend(),
-      db.getRecurring(), db.getGoals(), db.getIncome(), db.getPaycheckConfig(), db.getSavingsTransfer(),
+    const [ob, prof, acc, cats, spent, syncedSpend, rec, gls, inc, txns, pc, tr] = await Promise.all([
+      db.isOnboarded(), db.getProfile(), db.getAccounts(), db.getCategories(), db.getMonthSpend(), db.getSyncedSpendByCategory(),
+      db.getRecurring(), db.getGoals(), db.getIncome(), db.getBankTxns(), db.getPaycheckConfig(), db.getSavingsTransfer(),
     ]);
+    // Envelope spend = manual expenses + categorized synced transactions.
+    const merged: Record<string, number> = { ...spent };
+    for (const [k, v] of Object.entries(syncedSpend)) merged[k] = (merged[k] ?? 0) + v;
     setOnboarded(ob); setProfileState(prof);
-    setAccounts(acc); setCategories(cats); setSpent(spent);
+    setAccounts(acc); setCategories(cats); setSpent(merged); setTransactions(txns);
     setRecurring(rec); setGoals(gls); setIncome(inc); setPc(pc); setTransfer(tr);
     setLoading(false);
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      await refresh();
+      try {
+        const d = await fetchTxnSync();           // best-effort: server may be offline
+        if (__DEV__) console.log('[ballast] synced', d.added.length + d.modified.length, 'transactions');
+        await db.applyTxnSync(d);
+        if (alive) await refresh();
+      } catch (e) { console.log('[ballast sync] skipped:', String(e).slice(0, 140)); }
+    })();
+    return () => { alive = false; };
+  }, [refresh]);
 
   const completeOnboarding = useCallback(async (p: db.Profile, startingAccounts: Array<{ name: string; balance: number }>) => {
     await db.wipeDemoData();
@@ -125,10 +145,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addCategory = useCallback(async (name: string, limit: number) => { await db.addCategory(name, limit); await refresh(); }, [refresh]);
   const updateCategory = useCallback(async (id: string, f: { name: string; monthlyLimit: number }) => { await db.updateCategory(id, f); await refresh(); }, [refresh]);
   const deleteCategory = useCallback(async (id: string) => { await db.deleteCategory(id); await refresh(); }, [refresh]);
+  const syncTransactions = useCallback(async () => { const d = await fetchTxnSync(); await db.applyTxnSync(d); await refresh(); return d.added.length + d.modified.length; }, [refresh]);
+  const reassignTransaction = useCallback(async (id: string, envelopeId: string | null) => { await db.setTxnEnvelope(id, envelopeId); await refresh(); }, [refresh]);
   const linkBank = useCallback(async () => {
     const { institution } = await connectBank();          // opens Plaid Link natively
     const remote = await fetchPlaidAccounts();            // pull balances for all linked items
     await db.upsertAccounts(remote);
+    try { await db.applyTxnSync(await fetchTxnSync()); } catch { /* transactions may lag right after link */ }
     await refresh();
     return { institution, count: remote.length };
   }, [refresh]);
@@ -149,7 +172,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const breakdown = paycheck(paycheckConfig);
     // Cash = depository/manual only; credit-card & loan balances are debt, not cash.
     const totalCash = accounts.filter(isCash).reduce((s, a) => s + (a.balance ?? 0), 0);
-    const cardDebt = accounts.filter(isLiability).reduce((s, a) => s + (a.balance ?? 0), 0);
+    // Pending charges per account (signed): some banks (e.g. Chase) exclude pending
+    // from the reported balance, so we fold it in ourselves for cards.
+    const pendingByAccount: Record<string, number> = {};
+    for (const t of transactions) if (t.pending && t.accountId) pendingByAccount[t.accountId] = (pendingByAccount[t.accountId] ?? 0) + t.amount;
+    const cardDebt = accounts.filter(isLiability).reduce((s, a) => s + (a.balance ?? 0) + (pendingByAccount[a.id] ?? 0), 0);
     const netWorth = totalCash - cardDebt;
     const checking = accounts.find((a) => (a.subtype ?? '').includes('checking'));
     const checkingBalance = checking?.balance ?? totalCash;
@@ -178,7 +205,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     return {
       loading, onboarded, profile,
-      accounts, categories, spentByCategory, recurring, goals, income,
+      accounts, categories, spentByCategory, transactions, pendingByAccount, recurring, goals, income,
       paycheckConfig, breakdown, savingsTransfer,
       totalCash, cardDebt, netWorth, checkingBalance, monthlyNetIncome,
       projection: projectEndOfMonth(input),
@@ -188,12 +215,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       tax, today,
       refresh, completeOnboarding, updateProfile,
       addExpense, addAccount, updateAccountMeta, updatePaycheck, setCategoryLimit, addCategory, updateCategory, deleteCategory,
-      syncBank, linkBank, restartOnboarding,
+      syncTransactions, reassignTransaction, syncBank, linkBank, restartOnboarding,
       addRecurring, updateRecurring, deleteRecurring, addGoal, updateGoal, deleteGoal, addIncome, deleteIncome,
     };
-  }, [loading, onboarded, profile, accounts, categories, spentByCategory, recurring, goals, income, paycheckConfig, savingsTransfer,
+  }, [loading, onboarded, profile, accounts, categories, spentByCategory, transactions, recurring, goals, income, paycheckConfig, savingsTransfer,
       refresh, completeOnboarding, updateProfile, addExpense, addAccount, updateAccountMeta, updatePaycheck, setCategoryLimit,
-      addCategory, updateCategory, deleteCategory, syncBank, linkBank, restartOnboarding,
+      addCategory, updateCategory, deleteCategory, syncTransactions, reassignTransaction, syncBank, linkBank, restartOnboarding,
       addRecurring, updateRecurring, deleteRecurring, addGoal, updateGoal, deleteGoal, addIncome, deleteIncome]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

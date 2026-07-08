@@ -1,16 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  ScrollView,
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Modal,
-  TextInput,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
+import { ScrollView, View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 import Svg, { Rect, Path } from 'react-native-svg';
 import { colors, radius, money, guessCardColor } from '../theme';
 import { Card, Money, SectionHead, Swatch } from '../components/ui';
@@ -99,7 +88,7 @@ function AccountIcon({ kind }: { kind: AcctKind }) {
 export function AccountsScreen() {
   const {
     accounts, categories, recurring, breakdown, savingsTransfer, totalCash, cardDebt, netWorth,
-    checkingBalance, projection, today, syncBank, addAccount, linkBank,
+    checkingBalance, projection, today, syncBank, linkBank, pendingByAccount,
   } = useData();
   const { toast } = useFeedback();
   const [linking, setLinking] = useState(false);
@@ -109,10 +98,6 @@ export function AccountsScreen() {
   const cardAccounts = useMemo(() => accounts.filter(isLiability), [accounts]);
 
   const [syncing, setSyncing] = useState(false);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [balanceText, setBalanceText] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
   const bills = useMemo(() => recurring.reduce((s, b) => s + b.amount, 0), [recurring]);
   const variableBudget = useMemo(() => categories.reduce((s, c) => s + c.monthlyLimit, 0), [categories]);
@@ -132,8 +117,6 @@ export function AccountsScreen() {
     }
   }, [syncing, syncBank]);
 
-  const balanceNum = parseFloat(balanceText.replace(/,/g, ''));
-  const canSubmit = name.trim().length > 0 && Number.isFinite(balanceNum) && balanceNum >= 0;
 
   const handleLink = useCallback(async () => {
     if (linking) return;
@@ -149,24 +132,6 @@ export function AccountsScreen() {
     }
   }, [linking, linkBank, toast]);
 
-  const closeSheet = useCallback(() => {
-    setSheetOpen(false);
-    setName('');
-    setBalanceText('');
-  }, []);
-
-  const handleAdd = useCallback(async () => {
-    if (!canSubmit || submitting) return;
-    setSubmitting(true);
-    try {
-      await addAccount(name.trim(), balanceNum);
-      closeSheet();
-    } catch {
-      // Keep the sheet open so the user can retry.
-    } finally {
-      setSubmitting(false);
-    }
-  }, [canSubmit, submitting, addAccount, name, balanceNum, closeSheet]);
 
   const ledger: Array<{ key: string; label: string; swatch: string; value: string; color?: string }> = [
     { key: 'start', label: 'Starting balance', swatch: colors.faint, value: money(checkingBalance) },
@@ -193,11 +158,11 @@ export function AccountsScreen() {
       </Text>
 
       <Card style={styles.acctCard}>
-        {cashAccounts.map((a) => (
+        {cashAccounts.map((a, i) => (
           <Pressable
             key={a.id}
             onPress={() => setEditingAccount(a)}
-            style={({ pressed }) => [styles.acctRow, pressed && styles.acctRowPressed]}
+            style={({ pressed }) => [styles.acctRow, i === cashAccounts.length - 1 && styles.acctRowLast, pressed && styles.acctRowPressed]}
           >
             <AccountIcon kind={acctKind(a)} />
             <View style={styles.acctMain}>
@@ -219,33 +184,26 @@ export function AccountsScreen() {
           </Pressable>
         ))}
 
-        <Pressable
-          onPress={handleLink}
-          disabled={linking}
-          style={({ pressed }) => [styles.acctRow, pressed && styles.acctRowPressed]}
-        >
-          <View style={[styles.acctIcon, { backgroundColor: colors.mintBg }]}>
-            {linking ? <ActivityIndicator size="small" color={colors.teal} /> : <PlusSquareGlyph color={colors.teal} />}
-          </View>
-          <View style={styles.acctMain}>
-            <Text style={[styles.acctName, { color: colors.teal }]}>{linking ? 'Connecting…' : 'Connect a bank'}</Text>
-            <Text style={styles.acctCaption}>Link real balances with Plaid</Text>
-          </View>
-        </Pressable>
-
-        <Pressable
-          onPress={() => setSheetOpen(true)}
-          style={({ pressed }) => [styles.acctRow, styles.acctRowLast, pressed && styles.acctRowPressed]}
-        >
-          <View style={[styles.acctIcon, { backgroundColor: colors.lineSoft }]}>
-            <PlusSquareGlyph color={colors.greige} />
-          </View>
-          <View style={styles.acctMain}>
-            <Text style={[styles.acctName, { color: colors.greige }]}>Add account</Text>
-            <Text style={styles.acctCaption}>Name it, set a balance</Text>
-          </View>
-        </Pressable>
+        {cashAccounts.length === 0 ? (
+          <Text style={styles.emptyHint}>No cash accounts yet — connect a bank below to pull real balances.</Text>
+        ) : null}
       </Card>
+
+      {/* Distinct Connect-a-bank CTA (manual add removed — Plaid link is the way in) */}
+      <Pressable
+        onPress={handleLink}
+        disabled={linking}
+        style={({ pressed }) => [styles.connectBtn, pressed && styles.connectBtnPressed, linking && styles.connectBtnBusy]}
+      >
+        {linking ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <>
+            <PlusSquareGlyph color="#fff" />
+            <Text style={styles.connectText}>Connect a bank</Text>
+          </>
+        )}
+      </Pressable>
 
       {/* Cards (debt — shown separately from cash) */}
       {cardAccounts.length > 0 ? (
@@ -258,6 +216,8 @@ export function AccountsScreen() {
           <View style={styles.cardGrid}>
             {cardAccounts.map((a) => {
               const tile = a.color ?? guessCardColor(`${a.institution ?? ''} ${a.name}`);
+              const pend = pendingByAccount[a.id] ?? 0;
+              const owed = (a.balance ?? 0) + pend;
               return (
                 <Pressable
                   key={a.id}
@@ -270,8 +230,11 @@ export function AccountsScreen() {
                   </View>
                   <Text style={styles.cardName} numberOfLines={1}>{displayName(a)}</Text>
                   <View style={styles.cardTileBottom}>
-                    <Text style={styles.cardOwedLabel}>Balance owed</Text>
-                    <Money style={styles.cardOwed}>{money(a.balance)}</Money>
+                    <View>
+                      <Text style={styles.cardOwedLabel}>Balance owed</Text>
+                      {pend !== 0 ? <Text style={styles.cardPending}>incl. {money(pend)} pending</Text> : null}
+                    </View>
+                    <Money style={styles.cardOwed}>{money(owed)}</Money>
                   </View>
                 </Pressable>
               );
@@ -317,66 +280,6 @@ export function AccountsScreen() {
         </View>
       </Card>
 
-      {/* Add-account sheet */}
-      <Modal
-        visible={sheetOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={closeSheet}
-      >
-        <View style={styles.modalRoot}>
-          <Pressable style={styles.scrim} onPress={closeSheet} />
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={styles.sheet}>
-              <View style={styles.grab} />
-              <Text style={styles.sheetTitle}>Add an account</Text>
-
-              <Text style={styles.fieldLabel}>Account name</Text>
-              <View style={styles.inputWrap}>
-                <TextInput
-                  style={styles.nameInput}
-                  value={name}
-                  onChangeText={setName}
-                  placeholder="e.g. Chase Checking"
-                  placeholderTextColor={colors.faint}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  returnKeyType="next"
-                />
-              </View>
-
-              <Text style={styles.fieldLabel}>Starting balance</Text>
-              <View style={[styles.inputWrap, styles.amtWrap]}>
-                <Text style={styles.amtPrefix}>$</Text>
-                <TextInput
-                  style={styles.amtInput}
-                  value={balanceText}
-                  onChangeText={setBalanceText}
-                  placeholder="0"
-                  placeholderTextColor={colors.faint}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-
-              <Pressable
-                onPress={handleAdd}
-                disabled={!canSubmit || submitting}
-                style={({ pressed }) => [
-                  styles.goBtn,
-                  (!canSubmit || submitting) && styles.goBtnDisabled,
-                  pressed && canSubmit && styles.goBtnPressed,
-                ]}
-              >
-                {submitting ? (
-                  <ActivityIndicator size="small" color={colors.card} />
-                ) : (
-                  <Text style={styles.goText}>Add account</Text>
-                )}
-              </Pressable>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
@@ -401,12 +304,22 @@ const styles = StyleSheet.create({
   cardTileBottom: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 10 },
   cardOwedLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600' },
   cardOwed: { color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.4 },
+  cardPending: { color: 'rgba(255,255,255,0.75)', fontSize: 10.5, fontWeight: '600', marginTop: 2 },
   netRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginHorizontal: 2 },
   netLabel: { fontSize: 13.5, fontWeight: '700', color: colors.inkMid },
   netValue: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
 
   // Account rows
   acctCard: { overflow: 'hidden' },
+  emptyHint: { fontSize: 13, color: colors.greige, padding: 16, textAlign: 'center' },
+  connectBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: colors.teal, height: 54, borderRadius: 15, marginTop: 12,
+    shadowColor: colors.teal, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3,
+  },
+  connectBtnPressed: { opacity: 0.9 },
+  connectBtnBusy: { opacity: 0.7 },
+  connectText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
   acctRow: {
     flexDirection: 'row',
     alignItems: 'center',

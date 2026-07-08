@@ -3,6 +3,7 @@ import type { Account } from './types';
 import type { PaycheckConfig, Recurring } from './logic/finance';
 import type { Filing } from './logic/tax';
 import { categoryPalette } from './theme';
+import { suggestEnvelope } from './logic/categorize';
 
 // Local, on-device store. Manual and Plaid-synced accounts live in one table,
 // distinguished by `source`, so the rest of the app treats them identically.
@@ -123,6 +124,19 @@ async function openAndInit(): Promise<SQLite.SQLiteDatabase> {
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY NOT NULL,
       value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS transactions (
+      id          TEXT PRIMARY KEY NOT NULL,
+      accountId   TEXT,
+      name        TEXT,
+      merchant    TEXT,
+      amount      REAL,
+      date        TEXT,
+      pending     INTEGER NOT NULL DEFAULT 0,
+      pendingTxId TEXT,
+      pfc         TEXT,
+      pfcDetailed TEXT,
+      envelopeId  TEXT
     );
   `);
   // Migrate older installs whose accounts table predates nickname/color.
@@ -395,6 +409,88 @@ export async function getSavingsTransfer(): Promise<number> {
 
 export const categoryColor = (id: string) =>
   categoryPalette[id] ?? { c: '#5A51C8', track: '#EEEDFE', tx: '#3C3489' };
+
+// ---------- synced bank transactions ----------
+export interface BankTxn {
+  id: string;
+  accountId: string | null;
+  name: string;
+  merchant: string;
+  amount: number;        // Plaid sign: + = spend
+  date: string;
+  pending: number;       // 0/1
+  pendingTxId: string | null;
+  pfc: string | null;
+  pfcDetailed: string | null;
+  envelopeId: string | null;
+}
+
+// Shape the server's /transactions/sync returns for each added/modified txn.
+export interface RawTxn {
+  id: string;
+  account_id: string | null;
+  name: string;
+  merchant: string;
+  amount: number;
+  date: string;
+  pending: boolean;
+  pending_transaction_id: string | null;
+  pfc: string | null;
+  pfc_detailed: string | null;
+}
+
+/** Apply a Plaid sync delta. Handles pending→posted reconciliation: when a posted
+ *  txn arrives it deletes the pending row it supersedes, so the final amount (incl.
+ *  tips) replaces the pending one — never a duplicate. A user's manual envelope
+ *  choice is preserved across re-syncs via COALESCE. */
+export async function applyTxnSync(data: { added: RawTxn[]; modified: RawTxn[]; removed: string[] }) {
+  const db = await getDb();
+  const envelopes = await getCategories();
+  await db.withTransactionAsync(async () => {
+    for (const id of data.removed) {
+      await db.runAsync('DELETE FROM transactions WHERE id=?;', [id]);
+    }
+    for (const t of [...data.added, ...data.modified]) {
+      if (t.pending_transaction_id) {
+        await db.runAsync('DELETE FROM transactions WHERE id=?;', [t.pending_transaction_id]);
+      }
+      const suggested = suggestEnvelope(t.pfc, t.pfc_detailed, envelopes);
+      await db.runAsync(
+        `INSERT INTO transactions (id,accountId,name,merchant,amount,date,pending,pendingTxId,pfc,pfcDetailed,envelopeId)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET
+           accountId=excluded.accountId, name=excluded.name, merchant=excluded.merchant,
+           amount=excluded.amount, date=excluded.date, pending=excluded.pending,
+           pendingTxId=excluded.pendingTxId, pfc=excluded.pfc, pfcDetailed=excluded.pfcDetailed,
+           envelopeId=COALESCE(transactions.envelopeId, excluded.envelopeId);`,
+        [t.id, t.account_id, t.name, t.merchant, t.amount, t.date, t.pending ? 1 : 0,
+         t.pending_transaction_id, t.pfc, t.pfc_detailed, suggested]
+      );
+    }
+  });
+}
+
+export async function getBankTxns(limit = 40): Promise<BankTxn[]> {
+  const db = await getDb();
+  return db.getAllAsync<BankTxn>('SELECT * FROM transactions ORDER BY pending DESC, date DESC, id DESC LIMIT ?;', [limit]);
+}
+
+export async function setTxnEnvelope(id: string, envelopeId: string | null) {
+  const db = await getDb();
+  await db.runAsync('UPDATE transactions SET envelopeId=? WHERE id=?;', [envelopeId, id]);
+}
+
+/** Spend per envelope from synced transactions this month (spend = amount > 0). */
+export async function getSyncedSpendByCategory(): Promise<Record<string, number>> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ envelopeId: string; total: number }>(
+    `SELECT envelopeId, SUM(amount) total FROM transactions
+     WHERE envelopeId IS NOT NULL AND amount > 0
+       AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
+     GROUP BY envelopeId;`
+  );
+  return Object.fromEntries(rows.map((r) => [r.envelopeId, r.total]));
+}
 
 // ---------- profile / onboarding ----------
 async function putSetting(key: string, value: string) {

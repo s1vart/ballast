@@ -1,5 +1,6 @@
 import { API_BASE_URL, API_KEY } from './config';
 import type { PlaidAccount } from './types';
+import type { RawTxn } from './db';
 
 async function req(path: string, init?: RequestInit) {
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -26,3 +27,6 @@ export const exchangePublicToken = (
 
 export const fetchPlaidAccounts = (): Promise<PlaidAccount[]> =>
   req('/accounts').then((r) => r.accounts);
+
+export const fetchTxnSync = (): Promise<{ added: RawTxn[]; modified: RawTxn[]; removed: string[] }> =>
+  req('/transactions/sync');
