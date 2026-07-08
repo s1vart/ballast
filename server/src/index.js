@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { plaid } from './plaidClient.js';
-import { saveItem, getItems, setCursor } from './store.js';
+import { saveItem, getItems, setCursor, initStore } from './store.js';
 
 // --- Fail-fast env validation -----------------------------------------------
 // This server guards real bank data. Refuse to boot half-configured — an unset
@@ -113,7 +113,7 @@ app.post('/item/exchange', async (req, res) => {
       }
     } catch { /* institution name is best-effort */ }
 
-    saveItem({ item_id, access_token, institution, cursor: null });
+    await saveItem({ item_id, access_token, institution, cursor: null });
     res.json({ item_id, institution });
   } catch (e) {
     fail(res, e);
@@ -183,7 +183,7 @@ app.get('/transactions/sync', async (_req, res) => {
         cursor = r.data.next_cursor;
         hasMore = r.data.has_more;
       }
-      setCursor(item.item_id, cursor);
+      await setCursor(item.item_id, cursor);
     }
     res.json({ added, modified, removed });
   } catch (e) {
@@ -204,6 +204,8 @@ app.use((err, _req, res, _next) => {
   console.error('request error:', err.message);
   res.status(err.status || 500).json({ error: 'request failed' });
 });
+
+await initStore(); // hydrate the token store (file or Upstash) before serving
 
 const port = process.env.PORT || 8080;
 // 0.0.0.0 (default) = reachable from the LAN, which the phone workflow needs.
