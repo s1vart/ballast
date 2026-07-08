@@ -18,6 +18,7 @@ import { colors, paletteFor, radius, money } from '../theme';
 import { Card, Money, SectionHead, HBar, ProgressRing } from '../components/ui';
 import { EnvelopeManager } from '../components/EnvelopeManager';
 import { TransactionsList } from '../components/TransactionsList';
+import { BudgetPlanner } from '../components/BudgetPlanner';
 import { useData } from '../data/DataContext';
 import type { Category } from '../db';
 
@@ -71,6 +72,7 @@ export function BudgetsScreen(): React.ReactElement {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [managing, setManaging] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const [selCat, setSelCat] = useState('');
   const [amt, setAmt] = useState('');
 
@@ -135,6 +137,10 @@ export function BudgetsScreen(): React.ReactElement {
           </View>
         </View>
 
+        <Pressable style={({ pressed }) => [styles.planBtn, pressed && styles.fabPressed]} onPress={() => setPlanning(true)}>
+          <Text style={styles.planTx}>✨  Suggest budgets</Text>
+        </Pressable>
+
         {/* Envelopes grid */}
         <SectionHead title="Envelopes" action={categories.length === 0 ? '+ Add' : 'Manage'} onAction={() => setManaging(true)} />
         {categories.length === 0 ? (
@@ -156,6 +162,7 @@ export function BudgetsScreen(): React.ReactElement {
       </ScrollView>
 
       <EnvelopeManager visible={managing} onClose={() => setManaging(false)} />
+      <BudgetPlanner visible={planning} onClose={() => setPlanning(false)} />
 
       {/* Floating "+ Add expense" button */}
       {categories.length > 0 ? (
@@ -270,6 +277,8 @@ const styles = StyleSheet.create({
 
   // --- envelopes grid ---
   // SectionHead carries marginBottom 10; +2 here = the prototype's 12px gap.
+  planBtn: { marginTop: 12, height: 46, borderRadius: 13, borderWidth: 1.5, borderColor: colors.teal, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.mintBg },
+  planTx: { color: colors.teal, fontSize: 14.5, fontWeight: '800', letterSpacing: -0.2 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 11, marginTop: 2 },
   ec: { width: '48.4%', paddingTop: 13, paddingHorizontal: 13, paddingBottom: 12 },
   emptyCard: {

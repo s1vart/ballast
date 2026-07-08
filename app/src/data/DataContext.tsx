@@ -30,6 +30,7 @@ export interface BallastData {
   accounts: Account[];
   categories: db.Category[];
   spentByCategory: Record<string, number>;
+  avgSpendByCategory: Record<string, number>;
   transactions: db.BankTxn[];
   pendingByAccount: Record<string, number>;
   recurring: Recurring[];
@@ -59,6 +60,7 @@ export interface BallastData {
   updateAccountMeta: (id: string, f: { nickname: string | null; color: string | null }) => Promise<void>;
   updatePaycheck: (cfg: PaycheckConfig) => Promise<void>;
   setCategoryLimit: (id: string, limit: number) => Promise<void>;
+  setBudgets: (limits: Record<string, number>) => Promise<void>;
   addCategory: (name: string, limit: number) => Promise<void>;
   updateCategory: (id: string, f: { name: string; monthlyLimit: number }) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
@@ -92,17 +94,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [paycheckConfig, setPc] = useState<PaycheckConfig>({ grossAnnual: 98000, contribPct: 8, matchPct: 4, taxPct: 26 });
   const [savingsTransfer, setTransfer] = useState(0);
   const [transactions, setTransactions] = useState<db.BankTxn[]>([]);
+  const [avgSpendByCategory, setAvgSpend] = useState<Record<string, number>>({});
 
   const refresh = useCallback(async () => {
-    const [ob, prof, acc, cats, spent, syncedSpend, rec, gls, inc, txns, pc, tr] = await Promise.all([
-      db.isOnboarded(), db.getProfile(), db.getAccounts(), db.getCategories(), db.getMonthSpend(), db.getSyncedSpendByCategory(),
+    const [ob, prof, acc, cats, spent, syncedSpend, avgSpend, rec, gls, inc, txns, pc, tr] = await Promise.all([
+      db.isOnboarded(), db.getProfile(), db.getAccounts(), db.getCategories(), db.getMonthSpend(), db.getSyncedSpendByCategory(), db.getAvgMonthlySpendByCategory(),
       db.getRecurring(), db.getGoals(), db.getIncome(), db.getBankTxns(), db.getPaycheckConfig(), db.getSavingsTransfer(),
     ]);
     // Envelope spend = manual expenses + categorized synced transactions.
     const merged: Record<string, number> = { ...spent };
     for (const [k, v] of Object.entries(syncedSpend)) merged[k] = (merged[k] ?? 0) + v;
     setOnboarded(ob); setProfileState(prof);
-    setAccounts(acc); setCategories(cats); setSpent(merged); setTransactions(txns);
+    setAccounts(acc); setCategories(cats); setSpent(merged); setAvgSpend(avgSpend); setTransactions(txns);
     setRecurring(rec); setGoals(gls); setIncome(inc); setPc(pc); setTransfer(tr);
     setLoading(false);
   }, []);
@@ -141,6 +144,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const updateAccountMeta = useCallback(async (id: string, f: { nickname: string | null; color: string | null }) => { await db.updateAccountMeta(id, f); await refresh(); }, [refresh]);
   const updatePaycheck = useCallback(async (cfg: PaycheckConfig) => { setPc(cfg); await db.setPaycheckConfig(cfg); }, []);
   const setCategoryLimit = useCallback(async (id: string, limit: number) => { await db.setCategoryLimit(id, limit); await refresh(); }, [refresh]);
+  const setBudgets = useCallback(async (limits: Record<string, number>) => { await db.setCategoryLimits(limits); await refresh(); }, [refresh]);
   const syncBank = useCallback(async () => { const r = await fetchPlaidAccounts(); await db.upsertAccounts(r); await refresh(); return r.length; }, [refresh]);
   const addCategory = useCallback(async (name: string, limit: number) => { await db.addCategory(name, limit); await refresh(); }, [refresh]);
   const updateCategory = useCallback(async (id: string, f: { name: string; monthlyLimit: number }) => { await db.updateCategory(id, f); await refresh(); }, [refresh]);
@@ -205,7 +209,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     return {
       loading, onboarded, profile,
-      accounts, categories, spentByCategory, transactions, pendingByAccount, recurring, goals, income,
+      accounts, categories, spentByCategory, avgSpendByCategory, transactions, pendingByAccount, recurring, goals, income,
       paycheckConfig, breakdown, savingsTransfer,
       totalCash, cardDebt, netWorth, checkingBalance, monthlyNetIncome,
       projection: projectEndOfMonth(input),
@@ -214,13 +218,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       projectedAnnualIncome: (tax ? tax.w2AnnualGross + tax.annual1099Net : paycheckConfig.grossAnnual + incomeThisYear),
       tax, today,
       refresh, completeOnboarding, updateProfile,
-      addExpense, addAccount, updateAccountMeta, updatePaycheck, setCategoryLimit, addCategory, updateCategory, deleteCategory,
+      addExpense, addAccount, updateAccountMeta, updatePaycheck, setCategoryLimit, setBudgets, addCategory, updateCategory, deleteCategory,
       syncTransactions, reassignTransaction, syncBank, linkBank, restartOnboarding,
       addRecurring, updateRecurring, deleteRecurring, addGoal, updateGoal, deleteGoal, addIncome, deleteIncome,
     };
-  }, [loading, onboarded, profile, accounts, categories, spentByCategory, transactions, recurring, goals, income, paycheckConfig, savingsTransfer,
+  }, [loading, onboarded, profile, accounts, categories, spentByCategory, avgSpendByCategory, transactions, recurring, goals, income, paycheckConfig, savingsTransfer,
       refresh, completeOnboarding, updateProfile, addExpense, addAccount, updateAccountMeta, updatePaycheck, setCategoryLimit,
-      addCategory, updateCategory, deleteCategory, syncTransactions, reassignTransaction, syncBank, linkBank, restartOnboarding,
+      setBudgets, addCategory, updateCategory, deleteCategory, syncTransactions, reassignTransaction, syncBank, linkBank, restartOnboarding,
       addRecurring, updateRecurring, deleteRecurring, addGoal, updateGoal, deleteGoal, addIncome, deleteIncome]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

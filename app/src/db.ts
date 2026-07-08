@@ -515,6 +515,34 @@ export async function setTxnEnvelope(id: string, envelopeId: string | null) {
   await db.runAsync('UPDATE transactions SET envelopeId=? WHERE id=?;', [envelopeId, id]);
 }
 
+/** Average monthly spend per envelope over the last ~6 months of synced
+ *  transactions (spend only). Drives the Budget Planner's suggestions. */
+export async function getAvgMonthlySpendByCategory(): Promise<Record<string, number>> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ envelopeId: string; date: string; amount: number }>(
+    `SELECT envelopeId, date, amount FROM transactions
+     WHERE envelopeId IS NOT NULL AND amount > 0 AND date >= date('now','-6 months');`
+  );
+  if (rows.length === 0) return {};
+  const months = new Set(rows.map((r) => r.date.slice(0, 7)));
+  const span = Math.max(1, months.size);
+  const totals: Record<string, number> = {};
+  for (const r of rows) totals[r.envelopeId] = (totals[r.envelopeId] ?? 0) + r.amount;
+  const avg: Record<string, number> = {};
+  for (const [k, v] of Object.entries(totals)) avg[k] = v / span;
+  return avg;
+}
+
+/** Batch-set envelope budgets (used when applying a strategy). */
+export async function setCategoryLimits(limits: Record<string, number>) {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    for (const [id, limit] of Object.entries(limits)) {
+      await db.runAsync('UPDATE categories SET monthlyLimit=? WHERE id=?;', [limit, id]);
+    }
+  });
+}
+
 /** Spend per envelope from synced transactions this month (spend = amount > 0). */
 export async function getSyncedSpendByCategory(): Promise<Record<string, number>> {
   const db = await getDb();
