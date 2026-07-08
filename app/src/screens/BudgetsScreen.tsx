@@ -14,8 +14,9 @@ import {
   View,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { colors, categoryPalette, radius, money } from '../theme';
+import { colors, paletteFor, radius, money } from '../theme';
 import { Card, Money, SectionHead, HBar, ProgressRing } from '../components/ui';
+import { EnvelopeManager } from '../components/EnvelopeManager';
 import { useData } from '../data/DataContext';
 import type { Category } from '../db';
 
@@ -29,8 +30,6 @@ const PILL_BG = 'rgba(255,255,255,0.14)'; // "Left to spend" pill
 const TRACK_BG = 'rgba(255,255,255,0.16)'; // progress bar track
 const BACKDROP = colors.scrim;
 const OVER_BG = `${colors.bad}1F`; // colors.bad @ ~12% — "over" pill tint
-// Neutral fallback for categories missing from categoryPalette.
-const FALLBACK_PALETTE = { c: colors.inkSoft, track: colors.line, tx: colors.inkMid };
 
 // ---------- icons (ported inline per prototype convention) ----------
 function PlusIcon({ size = 15, color = WHITE }: { size?: number; color?: string }): React.ReactElement {
@@ -43,7 +42,7 @@ function PlusIcon({ size = 15, color = WHITE }: { size?: number; color?: string 
 
 // ---------- envelope card (one grid cell) ----------
 function EnvelopeCard({ cat, spent }: { cat: Category; spent: number }): React.ReactElement {
-  const pal = categoryPalette[cat.id] ?? FALLBACK_PALETTE;
+  const pal = paletteFor(cat.id);
   const limit = cat.monthlyLimit;
   const pct = limit > 0 ? spent / limit : 0;
   const over = spent > limit;
@@ -70,6 +69,7 @@ export function BudgetsScreen(): React.ReactElement {
   const { categories, spentByCategory, daysLeft, addExpense } = useData();
 
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [managing, setManaging] = useState(false);
   const [selCat, setSelCat] = useState('');
   const [amt, setAmt] = useState('');
 
@@ -135,15 +135,27 @@ export function BudgetsScreen(): React.ReactElement {
         </View>
 
         {/* Envelopes grid */}
-        <SectionHead title="Envelopes" action="Manage" />
-        <View style={styles.grid}>
-          {categories.map((cat) => (
-            <EnvelopeCard key={cat.id} cat={cat} spent={spentByCategory[cat.id] ?? 0} />
-          ))}
-        </View>
+        <SectionHead title="Envelopes" action={categories.length === 0 ? '+ Add' : 'Manage'} onAction={() => setManaging(true)} />
+        {categories.length === 0 ? (
+          <Pressable style={({ pressed }) => [styles.emptyCard, pressed && styles.fabPressed]} onPress={() => setManaging(true)}>
+            <Text style={styles.emptyTitle}>No envelopes yet</Text>
+            <Text style={styles.emptySub}>
+              Add one per spending category — groceries, dining out, gas — each with a monthly budget. Tap to start.
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={styles.grid}>
+            {categories.map((cat) => (
+              <EnvelopeCard key={cat.id} cat={cat} spent={spentByCategory[cat.id] ?? 0} />
+            ))}
+          </View>
+        )}
       </ScrollView>
 
+      <EnvelopeManager visible={managing} onClose={() => setManaging(false)} />
+
       {/* Floating "+ Add expense" button */}
+      {categories.length > 0 ? (
       <View style={styles.fabWrap} pointerEvents="box-none">
         <Pressable
           onPress={openSheet}
@@ -153,6 +165,7 @@ export function BudgetsScreen(): React.ReactElement {
           <Text style={styles.fabText}>Add expense</Text>
         </Pressable>
       </View>
+      ) : null}
 
       {/* Add-expense bottom sheet */}
       <Modal visible={sheetOpen} transparent animationType="slide" onRequestClose={closeSheet}>
@@ -254,8 +267,14 @@ const styles = StyleSheet.create({
 
   // --- envelopes grid ---
   // SectionHead carries marginBottom 10; +2 here = the prototype's 12px gap.
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 11, marginTop: 2 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 11, marginTop: 2 },
   ec: { width: '48.4%', paddingTop: 13, paddingHorizontal: 13, paddingBottom: 12 },
+  emptyCard: {
+    backgroundColor: colors.card, borderRadius: 18, borderWidth: 1, borderColor: colors.line,
+    padding: 20, alignItems: 'center', marginTop: 2,
+  },
+  emptyTitle: { fontSize: 15.5, fontWeight: '800', color: colors.ink },
+  emptySub: { fontSize: 12.5, color: colors.inkSoft, lineHeight: 18, textAlign: 'center', marginTop: 6 },
   ecTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cpill: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 9 },
   cpillText: { fontSize: 10, fontWeight: '700' },

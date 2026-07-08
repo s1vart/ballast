@@ -2,12 +2,14 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { colors, money } from '../theme';
 import { BottomSheet, Field, PrimaryButton, DangerButton } from './sheets';
+import { useFeedback } from './Feedback';
 import { useData } from '../data/DataContext';
 import type { Recurring } from '../logic/finance';
 
 /** Full recurring-bills manager, opened from Home's "See all". */
 export function RecurringManager({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { recurring, addRecurring, updateRecurring, deleteRecurring } = useData();
+  const { confirm, toast } = useFeedback();
   // null = list view; 'new' or a bill = form view
   const [editing, setEditing] = useState<Recurring | 'new' | null>(null);
 
@@ -26,7 +28,10 @@ export function RecurringManager({ visible, onClose }: { visible: boolean; onClo
             else await updateRecurring(editing.id, f);
             setEditing(null);
           }}
-          onDelete={editing !== 'new' ? async () => { await deleteRecurring(editing.id); setEditing(null); } : undefined}
+          onDelete={editing !== 'new' ? async () => {
+            const ok = await confirm({ title: 'Delete bill', message: `"${editing.name}" will be removed.`, confirmLabel: 'Delete', destructive: true });
+            if (ok) { await deleteRecurring(editing.id); toast('Bill deleted'); setEditing(null); }
+          } : undefined}
         />
       ) : (
         <View>

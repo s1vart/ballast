@@ -36,6 +36,17 @@ export const categoryPalette: Record<string, { c: string; track: string; tx: str
   health: { c: '#D4537E', track: '#FBEAF0', tx: '#993556' },
 };
 
+const PALETTE_CYCLE = Object.values(categoryPalette);
+
+/** Stable palette for any envelope id: known ids get their classic color,
+ *  user-created ones hash into the cycle so each keeps a consistent color. */
+export function paletteFor(id: string): { c: string; track: string; tx: string } {
+  if (categoryPalette[id]) return categoryPalette[id];
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return PALETTE_CYCLE[h % PALETTE_CYCLE.length];
+}
+
 export const radius = { card: 18, hero: 20, pill: 999, sheet: 22 } as const;
 
 export const shadow = {

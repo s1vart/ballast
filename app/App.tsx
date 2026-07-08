@@ -4,8 +4,10 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { Screen } from './src/components/Screen';
+import { FeedbackProvider } from './src/components/Feedback';
 import { DataProvider, useData } from './src/data/DataContext';
 import { colors } from './src/theme';
+import { Onboarding } from './src/screens/Onboarding';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { BudgetsScreen } from './src/screens/BudgetsScreen';
 import { GoalsScreen } from './src/screens/GoalsScreen';
@@ -17,33 +19,43 @@ type Tab = 'home' | 'budgets' | 'goals' | 'accounts' | 'paycheck';
 export default function App() {
   return (
     <SafeAreaProvider>
-      <DataProvider>
-        <Shell />
-      </DataProvider>
+      <FeedbackProvider>
+        <DataProvider>
+          <Root />
+        </DataProvider>
+      </FeedbackProvider>
     </SafeAreaProvider>
   );
 }
 
+/** Gate first run on onboarding; otherwise show the main tab shell. */
+function Root() {
+  const { loading, onboarded } = useData();
+  if (loading) {
+    return (
+      <Screen>
+        <View style={styles.loading}>
+          <ActivityIndicator color={colors.teal} size="large" />
+        </View>
+      </Screen>
+    );
+  }
+  return onboarded ? <Shell /> : <Onboarding />;
+}
+
 function Shell() {
   const [tab, setTab] = useState<Tab>('home');
-  const { loading } = useData();
 
   return (
     <Screen edges={['top']}>
       <StatusBar style="dark" />
-      {loading ? (
-        <View style={styles.loading}>
-          <ActivityIndicator color={colors.teal} size="large" />
-        </View>
-      ) : (
-        <View style={{ flex: 1 }}>
-          {tab === 'home' && <HomeScreen />}
-          {tab === 'budgets' && <BudgetsScreen />}
-          {tab === 'goals' && <GoalsScreen />}
-          {tab === 'accounts' && <AccountsScreen />}
-          {tab === 'paycheck' && <PaycheckScreen />}
-        </View>
-      )}
+      <View style={{ flex: 1 }}>
+        {tab === 'home' && <HomeScreen />}
+        {tab === 'budgets' && <BudgetsScreen />}
+        {tab === 'goals' && <GoalsScreen />}
+        {tab === 'accounts' && <AccountsScreen />}
+        {tab === 'paycheck' && <PaycheckScreen />}
+      </View>
       <TabBar tab={tab} onChange={setTab} />
     </Screen>
   );

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { colors } from '../theme';
 import { BottomSheet, Field, PrimaryButton, DangerButton } from './sheets';
+import { useFeedback } from './Feedback';
 import { useData } from '../data/DataContext';
 import type { Goal } from '../db';
 
@@ -14,6 +15,7 @@ export function GoalEditor({
   visible: boolean; goal: Goal | null; onClose: () => void;
 }) {
   const { addGoal, updateGoal, deleteGoal } = useData();
+  const { confirm, toast } = useFeedback();
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
   const [current, setCurrent] = useState('');
@@ -58,7 +60,15 @@ export function GoalEditor({
         </View>
       ) : null}
       <PrimaryButton label={goal ? 'Save goal' : 'Add goal'} disabled={!valid} onPress={save} />
-      {goal ? <DangerButton label="Delete goal" onPress={async () => { await deleteGoal(goal.id); onClose(); }} /> : null}
+      {goal ? (
+        <DangerButton
+          label="Delete goal"
+          onPress={async () => {
+            const ok = await confirm({ title: 'Delete goal', message: `"${goal.name}" will be removed.`, confirmLabel: 'Delete', destructive: true });
+            if (ok) { await deleteGoal(goal.id); toast('Goal deleted'); onClose(); }
+          }}
+        />
+      ) : null}
     </BottomSheet>
   );
 }

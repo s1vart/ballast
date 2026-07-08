@@ -14,6 +14,7 @@ import {
 import Svg, { Rect, Path } from 'react-native-svg';
 import { colors, radius, money } from '../theme';
 import { Card, Money, SectionHead, Swatch } from '../components/ui';
+import { useFeedback } from '../components/Feedback';
 import { useData } from '../data/DataContext';
 import type { Account } from '../types';
 
@@ -97,8 +98,10 @@ function AccountIcon({ kind }: { kind: AcctKind }) {
 export function AccountsScreen() {
   const {
     accounts, categories, recurring, breakdown, savingsTransfer,
-    checkingBalance, projection, today, syncBank, addAccount,
+    checkingBalance, projection, today, syncBank, addAccount, linkBank,
   } = useData();
+  const { toast } = useFeedback();
+  const [linking, setLinking] = useState(false);
 
   const [syncing, setSyncing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -126,6 +129,20 @@ export function AccountsScreen() {
 
   const balanceNum = parseFloat(balanceText.replace(/,/g, ''));
   const canSubmit = name.trim().length > 0 && Number.isFinite(balanceNum) && balanceNum >= 0;
+
+  const handleLink = useCallback(async () => {
+    if (linking) return;
+    setLinking(true);
+    try {
+      const { institution, count } = await linkBank();
+      toast(`Linked ${institution ?? 'your bank'} — ${count} account${count === 1 ? '' : 's'} synced`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : '';
+      if (msg !== 'cancelled') toast('Could not connect — is the server running?');
+    } finally {
+      setLinking(false);
+    }
+  }, [linking, linkBank, toast]);
 
   const closeSheet = useCallback(() => {
     setSheetOpen(false);
@@ -195,6 +212,20 @@ export function AccountsScreen() {
             </View>
           </View>
         ))}
+
+        <Pressable
+          onPress={handleLink}
+          disabled={linking}
+          style={({ pressed }) => [styles.acctRow, pressed && styles.acctRowPressed]}
+        >
+          <View style={[styles.acctIcon, { backgroundColor: colors.mintBg }]}>
+            {linking ? <ActivityIndicator size="small" color={colors.teal} /> : <PlusSquareGlyph color={colors.teal} />}
+          </View>
+          <View style={styles.acctMain}>
+            <Text style={[styles.acctName, { color: colors.teal }]}>{linking ? 'Connecting…' : 'Connect a bank'}</Text>
+            <Text style={styles.acctCaption}>Link real balances with Plaid</Text>
+          </View>
+        </Pressable>
 
         <Pressable
           onPress={() => setSheetOpen(true)}

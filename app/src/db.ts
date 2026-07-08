@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import type { Account } from './types';
 import type { PaycheckConfig, Recurring } from './logic/finance';
+import type { Filing } from './logic/tax';
 import { categoryPalette } from './theme';
 
 // Local, on-device store. Manual and Plaid-synced accounts live in one table,
@@ -32,6 +33,22 @@ export interface Goal {
   monthly: number;
   color: string;
   kind: 'goal' | 'retirement';
+}
+
+/** The user's real setup, captured in onboarding. Drives income + tax estimates. */
+export interface Profile {
+  filingStatus: Filing;
+  state: string;                    // 2-letter or 'none'
+  stateRatePct: number;             // approximate flat state income-tax rate
+  hasW2: boolean;
+  w2MonthlyGross: number;           // gross monthly W2 pay before tax
+  w2StartMonth: number;             // 1–12: month the W2 income started this year
+  has1099: boolean;
+  income1099YTD: number;            // 1099 income received so far this year
+  income1099MonthlyOngoing: number; // ongoing monthly 1099 going forward (0 if none)
+  taxSetAside: number;              // amount already reserved for taxes
+  payCadence: 'quarterly' | 'at_filing';
+  taxOverride: number | null;       // if set, use as the annual 1099 tax instead of the estimate
 }
 
 export type IncomeKind = 'bonus' | '1099' | 'other';
@@ -105,6 +122,11 @@ export async function getDb() {
 
 // Starter data so the app is alive on first run — every row is editable/replaceable.
 async function seedIfEmpty(db: SQLite.SQLiteDatabase) {
+  // Once the user has completed onboarding they manage their own data — never
+  // re-seed demo rows (this is what makes onboarding's "wipe" stick).
+  const ob = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key='onboarded';");
+  if (ob?.value === 'true') return;
+
   const catCount = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) n FROM categories;');
   if ((catCount?.n ?? 0) === 0) {
     const cats: Array<[string, string, number, number]> = [
@@ -212,6 +234,28 @@ export async function getCategories(): Promise<Category[]> {
 export async function setCategoryLimit(id: string, monthlyLimit: number) {
   const db = await getDb();
   await db.runAsync('UPDATE categories SET monthlyLimit=? WHERE id=?;', [monthlyLimit, id]);
+}
+
+export async function addCategory(name: string, monthlyLimit: number) {
+  const db = await getDb();
+  const maxSort = await db.getFirstAsync<{ m: number | null }>('SELECT MAX(sort) m FROM categories;');
+  await db.runAsync('INSERT INTO categories (id,name,monthlyLimit,sort) VALUES (?,?,?,?);', [
+    `cat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, monthlyLimit, (maxSort?.m ?? -1) + 1,
+  ]);
+}
+
+export async function updateCategory(id: string, f: { name: string; monthlyLimit: number }) {
+  const db = await getDb();
+  await db.runAsync('UPDATE categories SET name=?, monthlyLimit=? WHERE id=?;', [f.name, f.monthlyLimit, id]);
+}
+
+/** Deleting an envelope also removes its transactions (they'd be orphaned). */
+export async function deleteCategory(id: string) {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM txns WHERE categoryId=?;', [id]);
+    await db.runAsync('DELETE FROM categories WHERE id=?;', [id]);
+  });
 }
 
 export async function addTxn(categoryId: string, amount: number, note?: string) {
@@ -324,3 +368,46 @@ export async function getSavingsTransfer(): Promise<number> {
 
 export const categoryColor = (id: string) =>
   categoryPalette[id] ?? { c: '#5A51C8', track: '#EEEDFE', tx: '#3C3489' };
+
+// ---------- profile / onboarding ----------
+async function putSetting(key: string, value: string) {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value;',
+    [key, value]
+  );
+}
+
+export async function isOnboarded(): Promise<boolean> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key='onboarded';");
+  return row?.value === 'true';
+}
+
+export async function setOnboarded(v: boolean) {
+  await putSetting('onboarded', v ? 'true' : 'false');
+}
+
+export async function getProfile(): Promise<Profile | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key='profile';");
+  return row ? (JSON.parse(row.value) as Profile) : null;
+}
+
+export async function setProfile(p: Profile) {
+  await putSetting('profile', JSON.stringify(p));
+}
+
+/** Clear all user-facing demo data. Called when onboarding finishes. */
+export async function wipeDemoData() {
+  const db = await getDb();
+  await db.execAsync(`
+    DELETE FROM categories;
+    DELETE FROM txns;
+    DELETE FROM recurring;
+    DELETE FROM goals;
+    DELETE FROM income;
+    DELETE FROM accounts;
+    UPDATE settings SET value='0' WHERE key='savingsTransfer';
+  `);
+}
