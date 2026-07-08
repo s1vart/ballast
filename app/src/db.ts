@@ -3,7 +3,7 @@ import type { Account } from './types';
 import type { PaycheckConfig, Recurring } from './logic/finance';
 import type { Filing } from './logic/tax';
 import { categoryPalette } from './theme';
-import { suggestEnvelope, STANDARD_ENVELOPES } from './logic/categorize';
+import { suggestEnvelope, isSpendPfc, STANDARD_ENVELOPES } from './logic/categorize';
 
 // Local, on-device store. Manual and Plaid-synced accounts live in one table,
 // distinguished by `source`, so the rest of the app treats them identically.
@@ -460,18 +460,23 @@ export async function ensureStandardEnvelopes() {
   await putSetting('stdEnvSeeded', 'true');
 }
 
-/** Assign an envelope to any transaction that doesn't have one yet (e.g. synced
- *  before envelopes existed). Only touches null-envelope rows. */
-export async function recategorizeUnassigned() {
+/** Keep envelope assignments correct: fixed/transfer/income transactions are
+ *  force-unassigned (they aren't discretionary spend), and budgetable spend that
+ *  has no envelope gets a suggestion. Never overrides an existing spend assignment. */
+export async function recategorize() {
   const db = await getDb();
   const envelopes = await getCategories();
-  const rows = await db.getAllAsync<{ id: string; pfc: string | null; pfcDetailed: string | null }>(
-    'SELECT id, pfc, pfcDetailed FROM transactions WHERE envelopeId IS NULL;'
+  const rows = await db.getAllAsync<{ id: string; pfc: string | null; pfcDetailed: string | null; envelopeId: string | null }>(
+    'SELECT id, pfc, pfcDetailed, envelopeId FROM transactions;'
   );
   await db.withTransactionAsync(async () => {
     for (const r of rows) {
-      const env = suggestEnvelope(r.pfc, r.pfcDetailed, envelopes);
-      if (env) await db.runAsync('UPDATE transactions SET envelopeId=? WHERE id=?;', [env, r.id]);
+      if (!isSpendPfc(r.pfc)) {
+        if (r.envelopeId !== null) await db.runAsync('UPDATE transactions SET envelopeId=NULL WHERE id=?;', [r.id]);
+      } else if (r.envelopeId === null) {
+        const env = suggestEnvelope(r.pfc, r.pfcDetailed, envelopes);
+        if (env) await db.runAsync('UPDATE transactions SET envelopeId=? WHERE id=?;', [env, r.id]);
+      }
     }
   });
 }
@@ -502,7 +507,7 @@ export async function applyTxnSync(data: { added: RawTxn[]; modified: RawTxn[]; 
       );
     }
   });
-  await recategorizeUnassigned();
+  await recategorize();
 }
 
 export async function getBankTxns(limit = 40): Promise<BankTxn[]> {

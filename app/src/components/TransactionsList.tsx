@@ -6,7 +6,7 @@ import { BottomSheet, Chip } from './sheets';
 import { useFeedback } from './Feedback';
 import { useData } from '../data/DataContext';
 import { displayName } from '../types';
-import { humanizeCategory, isTransfer } from '../logic/categorize';
+import { humanizeCategory, isTransfer, isFixed } from '../logic/categorize';
 import type { BankTxn } from '../db';
 
 const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -58,20 +58,20 @@ export function TransactionsList() {
       ) : (
         <View style={styles.list}>
           {transactions.map((t) => {
-            const transfer = isTransfer(t.pfc);
+            const nonSpend = isTransfer(t.pfc) || isFixed(t.pfc);
             const inflow = t.amount < 0;
-            const label = transfer ? humanizeCategory(t.pfc, t.pfcDetailed) : catName(t.envelopeId) ?? humanizeCategory(t.pfc, t.pfcDetailed);
+            const label = nonSpend ? humanizeCategory(t.pfc, t.pfcDetailed) : catName(t.envelopeId) ?? humanizeCategory(t.pfc, t.pfcDetailed);
             return (
               <View key={t.id} style={styles.row}>
                 <View style={styles.rowMain}>
-                  <Text style={[styles.merchant, transfer && styles.muted]} numberOfLines={1}>{t.merchant || t.name}</Text>
+                  <Text style={[styles.merchant, nonSpend && styles.muted]} numberOfLines={1}>{t.merchant || t.name}</Text>
                   <View style={styles.metaRow}>
                     <Text style={styles.acct} numberOfLines={1}>{acctName(t.accountId)}</Text>
                     <Text style={styles.dot}>·</Text>
                     <Text style={styles.date}>{shortDate(t.date)}</Text>
                     {t.pending ? <View style={styles.pendingPill}><Text style={styles.pendingTx}>Pending</Text></View> : null}
                   </View>
-                  {transfer ? (
+                  {nonSpend ? (
                     <Text style={styles.transferTag}>{label}</Text>
                   ) : (
                     <Pressable onPress={() => setPicking(t)} hitSlop={6} style={styles.catChipWrap}>
@@ -79,8 +79,8 @@ export function TransactionsList() {
                     </Pressable>
                   )}
                 </View>
-                <Text style={[styles.amount, transfer ? styles.amountMuted : inflow ? styles.amountIn : styles.amountOut]}>
-                  {transfer ? '' : inflow ? '+' : ''}{money(Math.abs(t.amount))}
+                <Text style={[styles.amount, nonSpend ? styles.amountMuted : inflow ? styles.amountIn : styles.amountOut]}>
+                  {nonSpend ? '' : inflow ? '+' : ''}{money(Math.abs(t.amount))}
                 </Text>
               </View>
             );

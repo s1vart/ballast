@@ -22,12 +22,17 @@ const DETAILED_KEYWORDS: Record<string, string[]> = {
   FOOD_AND_DRINK_COFFEE: ['dining', 'coffee', 'food'],
 };
 
-// Not discretionary spending — never fill an envelope, and shown as their own thing.
-const NON_SPEND_PFC = new Set(['INCOME', 'TRANSFER_IN', 'TRANSFER_OUT', 'LOAN_PAYMENTS', 'BANK_FEES']);
-// The subset that are money movement between your own accounts / card payoffs.
+// Fixed necessities (rent, utilities) — recurring bills, NOT discretionary spend.
+// Tracked via recurring bills / the projection, so they never fill a spend envelope.
+const FIXED_PFC = new Set(['RENT_AND_UTILITIES']);
+// Money movement between your own accounts / card payoffs.
 const TRANSFER_PFC = new Set(['TRANSFER_IN', 'TRANSFER_OUT', 'LOAN_PAYMENTS']);
+// Neither discretionary spend nor budgeted: transfers, income, fees, fixed bills.
+const NON_SPEND_PFC = new Set(['INCOME', 'BANK_FEES', ...TRANSFER_PFC, ...FIXED_PFC]);
 
 export const isTransfer = (pfc: string | null): boolean => !!pfc && TRANSFER_PFC.has(pfc);
+export const isFixed = (pfc: string | null): boolean => !!pfc && FIXED_PFC.has(pfc);
+/** Excludes transfers/income/fees AND fixed bills like rent from being budgeted. */
 export const isSpendPfc = (pfc: string | null): boolean => !(pfc && NON_SPEND_PFC.has(pfc));
 
 /** True if this transaction is spending that should count toward an envelope. */
@@ -74,7 +79,8 @@ export const STANDARD_ENVELOPES: Array<{ id: string; name: string; monthlyLimit:
   { id: 'shopping', name: 'Shopping', monthlyLimit: 300 },
   { id: 'entertainment', name: 'Entertainment', monthlyLimit: 150 },
   { id: 'health', name: 'Health & Personal', monthlyLimit: 150 },
-  { id: 'bills', name: 'Bills & Utilities', monthlyLimit: 400 },
+  // Note: no "Bills" envelope — rent/utilities are fixed recurring bills, tracked
+  // separately from discretionary envelopes so they don't inflate spending.
   { id: 'other', name: 'Other', monthlyLimit: 200 },
 ];
 
