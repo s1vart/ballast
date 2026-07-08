@@ -86,7 +86,7 @@ export const shadow = {
 export const money = (n: number | null | undefined, opts?: { sign?: boolean }): string => {
   if (n == null) return '—';
   const sign = opts?.sign && n > 0 ? '+' : n < 0 ? '−' : '';
-  return `${sign}$${Math.abs(Math.round(n)).toLocaleString('en-US')}`;
+  return `${sign}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 /** Serialize a Date to yyyy-mm-dd using LOCAL components (NOT toISOString, which is UTC

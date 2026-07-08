@@ -183,8 +183,8 @@ export function HomeScreen() {
           <Text style={styles.ebTx}>Projected end of month · Checking</Text>
         </View>
         <Money style={styles.big}>
-          {money(projection)}
-          <Text style={styles.cents}>.00</Text>
+          {money(projection).split('.')[0]}
+          <Text style={styles.cents}>.{money(projection).split('.')[1]}</Text>
         </Money>
         <View style={styles.sub}>
           <View style={[styles.delta, { backgroundColor: deltaBg }]}>

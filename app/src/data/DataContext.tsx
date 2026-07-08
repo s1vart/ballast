@@ -113,8 +113,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await refresh();
       try {
         const d = await fetchTxnSync();           // best-effort: server may be offline
-        if (__DEV__) console.log('[ballast] synced', d.added.length + d.modified.length, 'transactions');
         await db.applyTxnSync(d);
+        if (__DEV__) console.log('[ballast] synced', d.added.length + d.modified.length, 'txns');
         if (alive) await refresh();
       } catch (e) { console.log('[ballast sync] skipped:', String(e).slice(0, 140)); }
     })();

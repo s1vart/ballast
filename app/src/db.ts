@@ -3,7 +3,7 @@ import type { Account } from './types';
 import type { PaycheckConfig, Recurring } from './logic/finance';
 import type { Filing } from './logic/tax';
 import { categoryPalette } from './theme';
-import { suggestEnvelope } from './logic/categorize';
+import { suggestEnvelope, STANDARD_ENVELOPES } from './logic/categorize';
 
 // Local, on-device store. Manual and Plaid-synced accounts live in one table,
 // distinguished by `source`, so the rest of the app treats them identically.
@@ -443,8 +443,42 @@ export interface RawTxn {
  *  txn arrives it deletes the pending row it supersedes, so the final amount (incl.
  *  tips) replaces the pending one — never a duplicate. A user's manual envelope
  *  choice is preserved across re-syncs via COALESCE. */
+/** Seed the standard "normal credit-card" envelopes once, if the user has none,
+ *  so transactions have somewhere to land. Respects custom envelopes (won't seed
+ *  if any exist) and never resurrects after (flag). */
+export async function ensureStandardEnvelopes() {
+  const db = await getDb();
+  const seeded = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key='stdEnvSeeded';");
+  if (seeded?.value === 'true') return;
+  const cnt = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) n FROM categories;');
+  if ((cnt?.n ?? 0) === 0) {
+    for (let i = 0; i < STANDARD_ENVELOPES.length; i++) {
+      const e = STANDARD_ENVELOPES[i];
+      await db.runAsync('INSERT INTO categories (id,name,monthlyLimit,sort) VALUES (?,?,?,?);', [e.id, e.name, e.monthlyLimit, i]);
+    }
+  }
+  await putSetting('stdEnvSeeded', 'true');
+}
+
+/** Assign an envelope to any transaction that doesn't have one yet (e.g. synced
+ *  before envelopes existed). Only touches null-envelope rows. */
+export async function recategorizeUnassigned() {
+  const db = await getDb();
+  const envelopes = await getCategories();
+  const rows = await db.getAllAsync<{ id: string; pfc: string | null; pfcDetailed: string | null }>(
+    'SELECT id, pfc, pfcDetailed FROM transactions WHERE envelopeId IS NULL;'
+  );
+  await db.withTransactionAsync(async () => {
+    for (const r of rows) {
+      const env = suggestEnvelope(r.pfc, r.pfcDetailed, envelopes);
+      if (env) await db.runAsync('UPDATE transactions SET envelopeId=? WHERE id=?;', [env, r.id]);
+    }
+  });
+}
+
 export async function applyTxnSync(data: { added: RawTxn[]; modified: RawTxn[]; removed: string[] }) {
   const db = await getDb();
+  await ensureStandardEnvelopes();
   const envelopes = await getCategories();
   await db.withTransactionAsync(async () => {
     for (const id of data.removed) {
@@ -468,6 +502,7 @@ export async function applyTxnSync(data: { added: RawTxn[]; modified: RawTxn[]; 
       );
     }
   });
+  await recategorizeUnassigned();
 }
 
 export async function getBankTxns(limit = 40): Promise<BankTxn[]> {
