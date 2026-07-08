@@ -5,23 +5,35 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius } from '../theme';
 
-/** Reusable bottom sheet: scrim + slide-up card, grab handle, title. */
+/** Reusable bottom sheet: scrim + slide-up card, grab handle, title.
+ *
+ *  Keyboard: statusBarTranslucent modals on Android do NOT auto-resize for the
+ *  keyboard, so we use KeyboardAvoidingView 'padding' on BOTH platforms — the
+ *  sheet lifts above the keyboard and its content compresses.
+ *
+ *  `scroll={false}` renders children in a shrinkable View instead of the
+ *  built-in ScrollView — use it when a child manages its own scrolling
+ *  (e.g. the state picker's list), so scrollables don't nest. */
 export function BottomSheet({
-  visible, onClose, title, children,
+  visible, onClose, title, children, scroll = true,
 }: {
-  visible: boolean; onClose: () => void; title: string; children: React.ReactNode;
+  visible: boolean; onClose: () => void; title: string; children: React.ReactNode; scroll?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.fill} behavior="padding">
         <Pressable style={styles.scrim} onPress={onClose} />
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 18) + 10 }]}>
           <View style={styles.grab} />
           <Text style={styles.title}>{title}</Text>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {children}
-          </ScrollView>
+          {scroll ? (
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {children}
+            </ScrollView>
+          ) : (
+            <View style={styles.shrink}>{children}</View>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -100,6 +112,7 @@ const styles = StyleSheet.create({
     maxHeight: '86%',
   },
   grab: { width: 38, height: 4, borderRadius: 3, backgroundColor: '#DADEE2', alignSelf: 'center', marginBottom: 14 },
+  shrink: { flexShrink: 1 },
   title: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3, color: colors.ink, marginBottom: 6 },
   fieldWrap: { marginTop: 14 },
   fieldLabel: {

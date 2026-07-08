@@ -151,6 +151,7 @@ export function Onboarding() {
       // On success the app flips away from this screen; toast is a graceful touch.
       toast('Welcome to Ballast');
     } catch (e) {
+      console.error('onboarding finish failed', e);
       setSubmitting(false);
       toast('Something went wrong — please try again');
     }

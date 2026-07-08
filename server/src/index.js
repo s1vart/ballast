@@ -126,8 +126,10 @@ app.get('/accounts', async (_req, res) => {
   try {
     const accounts = [];
     for (const item of getItems()) {
-      const bal = await plaid.accountsBalanceGet({ access_token: item.access_token });
-      for (const a of bal.data.accounts) {
+      // accountsGet returns balances too and is bundled with Transactions —
+      // avoids the metered per-call Balance product ($0.10/call).
+      const acc = await plaid.accountsGet({ access_token: item.access_token });
+      for (const a of acc.data.accounts) {
         accounts.push({
           id: a.account_id,
           item_id: item.item_id,

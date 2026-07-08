@@ -29,7 +29,7 @@ export function StatePicker({
   }
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Where do you pay state taxes?">
+    <BottomSheet visible={visible} onClose={onClose} title="Where do you pay state taxes?" scroll={false}>
       <View style={styles.searchWrap}>
         <TextInput
           style={styles.search}
@@ -63,7 +63,9 @@ export function StatePicker({
 const styles = StyleSheet.create({
   searchWrap: { marginTop: 12, borderWidth: 1.5, borderColor: '#E4E7EB', borderRadius: 14, paddingHorizontal: 15 },
   search: { fontSize: 16, fontWeight: '600', color: colors.ink, paddingVertical: 12 },
-  list: { marginTop: 10, maxHeight: 420 },
+  // flexGrow 0 + flexShrink 1: capped at 420 normally, but compresses (and stays
+  // scrollable) when the keyboard shrinks the sheet instead of hiding behind it.
+  list: { marginTop: 10, maxHeight: 420, flexGrow: 0, flexShrink: 1 },
   row: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 13, paddingHorizontal: 4,

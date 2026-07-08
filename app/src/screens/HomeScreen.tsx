@@ -6,7 +6,7 @@ import { Card, Money, SectionHead } from '../components/ui';
 import { RecurringManager } from '../components/RecurringManager';
 import { useData } from '../data/DataContext';
 import type { Recurring } from '../logic/finance';
-import type { Account } from '../types';
+import { Account, isCash, displayName } from '../types';
 
 // ---------- inline icons (ported from the prototype SVGs) ----------
 
@@ -76,7 +76,7 @@ function AccountChip({ account }: { account: Account }) {
           {isSavings ? <SavingsIcon color={tint} /> : <CheckingIcon color={tint} />}
         </View>
         <Text style={styles.chipName} numberOfLines={1}>
-          {account.name}
+          {displayName(account)}
         </Text>
       </View>
       <Money style={styles.chipAmt}>{money(account.balance)}</Money>
@@ -110,6 +110,7 @@ function BillRow({ bill, monthLabel, last }: { bill: Recurring; monthLabel: stri
 
 export function HomeScreen() {
   const { accounts, recurring, projection, checkingBalance, trajectory, today } = useData();
+  const cashAccounts = accounts.filter(isCash);
   const [showAll, setShowAll] = useState(false);
 
   const monthYear = today.toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -243,10 +244,10 @@ export function HomeScreen() {
         </View>
       </Card>
 
-      {/* Account chips */}
-      {accounts.length > 0 ? (
+      {/* Account chips — cash only (cards are debt, shown on the Accounts tab) */}
+      {cashAccounts.length > 0 ? (
         <View style={styles.chips}>
-          {accounts.map((a) => (
+          {cashAccounts.map((a) => (
             <AccountChip key={a.id} account={a} />
           ))}
         </View>

@@ -47,6 +47,30 @@ export function paletteFor(id: string): { c: string; track: string; tx: string }
   return PALETTE_CYCLE[h % PALETTE_CYCLE.length];
 }
 
+// Card-tile colors (deep, so white text/logo reads on them).
+export const CARD_COLORS = [
+  '#1A1D29', // graphite/black (metal cards — Venture X)
+  '#1E3A8A', // deep blue (Prime/Chase, Amex Blue)
+  '#0E5B57', // Ballast teal
+  '#7A1F2B', // burgundy
+  '#1E3A2A', // forest
+  '#4B2E83', // purple
+  '#B45309', // amber/bronze
+  '#334155', // slate
+] as const;
+
+/** Best-guess card color from the issuer/name so cards look distinct out of the box;
+ *  the user can override it. */
+export function guessCardColor(text: string): string {
+  const t = text.toLowerCase();
+  if (t.includes('venture') || t.includes('capital one')) return '#1A1D29';
+  if (t.includes('prime') || t.includes('amazon') || t.includes('chase')) return '#1E3A8A';
+  if (t.includes('costco') || t.includes('citi')) return '#334155';
+  if (t.includes('amex') || t.includes('american express')) return '#1E5F8A';
+  if (t.includes('discover')) return '#B45309';
+  return '#1A1D29';
+}
+
 export const radius = { card: 18, hero: 20, pill: 999, sheet: 22 } as const;
 
 export const shadow = {

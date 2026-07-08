@@ -12,11 +12,12 @@ import {
   Platform,
 } from 'react-native';
 import Svg, { Rect, Path } from 'react-native-svg';
-import { colors, radius, money } from '../theme';
+import { colors, radius, money, guessCardColor } from '../theme';
 import { Card, Money, SectionHead, Swatch } from '../components/ui';
 import { useFeedback } from '../components/Feedback';
+import { AccountEditor } from '../components/AccountEditor';
 import { useData } from '../data/DataContext';
-import type { Account } from '../types';
+import { Account, isCash, isLiability, displayName } from '../types';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -97,11 +98,15 @@ function AccountIcon({ kind }: { kind: AcctKind }) {
 
 export function AccountsScreen() {
   const {
-    accounts, categories, recurring, breakdown, savingsTransfer,
+    accounts, categories, recurring, breakdown, savingsTransfer, totalCash, cardDebt, netWorth,
     checkingBalance, projection, today, syncBank, addAccount, linkBank,
   } = useData();
   const { toast } = useFeedback();
   const [linking, setLinking] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+
+  const cashAccounts = useMemo(() => accounts.filter(isCash), [accounts]);
+  const cardAccounts = useMemo(() => accounts.filter(isLiability), [accounts]);
 
   const [syncing, setSyncing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -177,26 +182,27 @@ export function AccountsScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* Cash accounts */}
+      {/* Cash */}
       <View style={styles.firstHead}>
-        <SectionHead
-          title="Cash accounts"
-          action={syncing ? undefined : 'Sync'}
-          onAction={handleSync}
-        />
-        {syncing ? (
-          <ActivityIndicator size="small" color={colors.teal} style={styles.syncSpinner} />
-        ) : null}
+        <SectionHead title="Cash" action={syncing ? undefined : 'Sync'} onAction={handleSync} />
+        {syncing ? <ActivityIndicator size="small" color={colors.teal} style={styles.syncSpinner} /> : null}
       </View>
+      <Text style={styles.sectionTotal}>
+        <Money style={styles.sectionTotalBold}>{money(totalCash)}</Money>
+        {`  across ${cashAccounts.length} account${cashAccounts.length === 1 ? '' : 's'}`}
+      </Text>
 
       <Card style={styles.acctCard}>
-        {accounts.map((a) => (
-          <View key={a.id} style={styles.acctRow}>
+        {cashAccounts.map((a) => (
+          <Pressable
+            key={a.id}
+            onPress={() => setEditingAccount(a)}
+            style={({ pressed }) => [styles.acctRow, pressed && styles.acctRowPressed]}
+          >
             <AccountIcon kind={acctKind(a)} />
             <View style={styles.acctMain}>
               <Text style={styles.acctName} numberOfLines={1}>
-                {a.name}
-                {a.mask ? ` ••${a.mask}` : ''}
+                {displayName(a)}{a.mask ? ` ••${a.mask}` : ''}
               </Text>
               <Text style={styles.acctCaption} numberOfLines={1}>
                 {`${a.institution ?? 'Manual'} · ${capitalize(a.subtype ?? a.type ?? 'cash')}`}
@@ -210,7 +216,7 @@ export function AccountsScreen() {
                 </Text>
               </View>
             </View>
-          </View>
+          </Pressable>
         ))}
 
         <Pressable
@@ -229,11 +235,7 @@ export function AccountsScreen() {
 
         <Pressable
           onPress={() => setSheetOpen(true)}
-          style={({ pressed }) => [
-            styles.acctRow,
-            styles.acctRowLast,
-            pressed && styles.acctRowPressed,
-          ]}
+          style={({ pressed }) => [styles.acctRow, styles.acctRowLast, pressed && styles.acctRowPressed]}
         >
           <View style={[styles.acctIcon, { backgroundColor: colors.lineSoft }]}>
             <PlusSquareGlyph color={colors.greige} />
@@ -244,6 +246,53 @@ export function AccountsScreen() {
           </View>
         </Pressable>
       </Card>
+
+      {/* Cards (debt — shown separately from cash) */}
+      {cardAccounts.length > 0 ? (
+        <>
+          <SectionHead title="Cards" />
+          <Text style={styles.sectionTotal}>
+            <Money style={[styles.sectionTotalBold, { color: colors.bad }]}>{money(cardDebt)}</Money>
+            {`  owed across ${cardAccounts.length} card${cardAccounts.length === 1 ? '' : 's'}`}
+          </Text>
+          <View style={styles.cardGrid}>
+            {cardAccounts.map((a) => {
+              const tile = a.color ?? guessCardColor(`${a.institution ?? ''} ${a.name}`);
+              return (
+                <Pressable
+                  key={a.id}
+                  onPress={() => setEditingAccount(a)}
+                  style={({ pressed }) => [styles.cardTile, { backgroundColor: tile }, pressed && styles.cardTilePressed]}
+                >
+                  <View style={styles.cardTileTop}>
+                    <Text style={styles.cardInst} numberOfLines={1}>{a.institution ?? 'Card'}</Text>
+                    <Text style={styles.cardMask}>••{a.mask ?? '----'}</Text>
+                  </View>
+                  <Text style={styles.cardName} numberOfLines={1}>{displayName(a)}</Text>
+                  <View style={styles.cardTileBottom}>
+                    <Text style={styles.cardOwedLabel}>Balance owed</Text>
+                    <Money style={styles.cardOwed}>{money(a.balance)}</Money>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
+
+      {/* Net worth line */}
+      {cardAccounts.length > 0 ? (
+        <View style={styles.netRow}>
+          <Text style={styles.netLabel}>Net (cash − cards)</Text>
+          <Money style={[styles.netValue, { color: netWorth >= 0 ? colors.ink : colors.bad }]}>{money(netWorth)}</Money>
+        </View>
+      ) : null}
+
+      <AccountEditor
+        visible={editingAccount !== null}
+        account={editingAccount}
+        onClose={() => setEditingAccount(null)}
+      />
 
       {/* End-of-month projection */}
       <SectionHead title="End-of-month projection" />
@@ -339,6 +388,22 @@ const styles = StyleSheet.create({
   // The prototype's first sechead uses margin-top:8 instead of 18.
   firstHead: { marginTop: -10 },
   syncSpinner: { position: 'absolute', right: 2, top: 8 },
+  sectionTotal: { fontSize: 13, color: colors.inkSoft, fontWeight: '500', marginTop: -4, marginBottom: 10, marginHorizontal: 2 },
+  sectionTotalBold: { fontSize: 15, fontWeight: '800', color: colors.ink },
+  // card tiles (debt)
+  cardGrid: { gap: 11 },
+  cardTile: { borderRadius: 16, padding: 16, minHeight: 104, justifyContent: 'space-between' },
+  cardTilePressed: { opacity: 0.9 },
+  cardTileTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cardInst: { color: 'rgba(255,255,255,0.85)', fontSize: 12.5, fontWeight: '700', letterSpacing: 0.2, flex: 1 },
+  cardMask: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  cardName: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: -0.2, marginTop: 10 },
+  cardTileBottom: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 10 },
+  cardOwedLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600' },
+  cardOwed: { color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.4 },
+  netRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginHorizontal: 2 },
+  netLabel: { fontSize: 13.5, fontWeight: '700', color: colors.inkMid },
+  netValue: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
 
   // Account rows
   acctCard: { overflow: 'hidden' },

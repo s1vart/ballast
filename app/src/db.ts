@@ -8,7 +8,10 @@ import { categoryPalette } from './theme';
 // distinguished by `source`, so the rest of the app treats them identically.
 // All tables use CREATE IF NOT EXISTS + seed-if-empty, so upgrading the app
 // never touches existing data (e.g. the linked Plaid accounts).
-let _db: SQLite.SQLiteDatabase | null = null;
+// Cache the init PROMISE (not the resolved handle) so concurrent first-callers
+// — e.g. the ~10 parallel reads in DataContext.refresh() — all await ONE
+// open+seed instead of each racing to seed (which collided on income.id).
+let _dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export interface Category {
   id: string;
@@ -61,10 +64,14 @@ export interface Income {
   date: string; // ISO yyyy-mm-dd
 }
 
-export async function getDb() {
-  if (_db) return _db;
-  _db = await SQLite.openDatabaseAsync('ballast.db');
-  await _db.execAsync(`
+export function getDb(): Promise<SQLite.SQLiteDatabase> {
+  if (!_dbPromise) _dbPromise = openAndInit();
+  return _dbPromise;
+}
+
+async function openAndInit(): Promise<SQLite.SQLiteDatabase> {
+  const db = await SQLite.openDatabaseAsync('ballast.db');
+  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS accounts (
       id          TEXT PRIMARY KEY NOT NULL,
       name        TEXT NOT NULL,
@@ -73,7 +80,9 @@ export async function getDb() {
       mask        TEXT,
       balance     REAL,
       institution TEXT,
-      source      TEXT NOT NULL DEFAULT 'manual'
+      source      TEXT NOT NULL DEFAULT 'manual',
+      nickname    TEXT,
+      color       TEXT
     );
     CREATE TABLE IF NOT EXISTS categories (
       id           TEXT PRIMARY KEY NOT NULL,
@@ -116,8 +125,19 @@ export async function getDb() {
       value TEXT NOT NULL
     );
   `);
-  await seedIfEmpty(_db);
-  return _db;
+  // Migrate older installs whose accounts table predates nickname/color.
+  await addColumnIfMissing(db, 'accounts', 'nickname', 'TEXT');
+  await addColumnIfMissing(db, 'accounts', 'color', 'TEXT');
+  await seedIfEmpty(db);
+  return db;
+}
+
+async function addColumnIfMissing(db: SQLite.SQLiteDatabase, table: string, col: string, type: string) {
+  try {
+    await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${col} ${type};`);
+  } catch {
+    // column already exists — SQLite throws "duplicate column name"; safe to ignore
+  }
 }
 
 // Starter data so the app is alive on first run — every row is editable/replaceable.
@@ -223,6 +243,13 @@ export async function addManualAccount(name: string, balance: number) {
   await db.runAsync(`INSERT INTO accounts (id, name, balance, source) VALUES (?, ?, ?, 'manual');`, [
     `manual-${Date.now()}`, name, balance,
   ]);
+}
+
+/** User-owned display metadata; deliberately NOT touched by upsertAccounts (Plaid sync),
+ *  so a nickname/color survives every re-sync. */
+export async function updateAccountMeta(id: string, f: { nickname: string | null; color: string | null }) {
+  const db = await getDb();
+  await db.runAsync('UPDATE accounts SET nickname=?, color=? WHERE id=?;', [f.nickname, f.color, id]);
 }
 
 // ---------- categories / txns ----------
@@ -352,7 +379,7 @@ export async function deleteIncome(id: string) {
 export async function getPaycheckConfig(): Promise<PaycheckConfig> {
   const db = await getDb();
   const row = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key='paycheck';");
-  return JSON.parse(row!.value) as PaycheckConfig;
+  return row ? (JSON.parse(row.value) as PaycheckConfig) : { grossAnnual: 98000, contribPct: 8, matchPct: 4, taxPct: 26 };
 }
 
 export async function setPaycheckConfig(cfg: PaycheckConfig) {
