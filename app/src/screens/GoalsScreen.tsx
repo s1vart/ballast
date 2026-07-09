@@ -6,7 +6,7 @@ import { Card, Money, SectionHead, HBar } from '../components/ui';
 import { GoalEditor } from '../components/GoalEditor';
 import { useData } from '../data/DataContext';
 import { displayName } from '../types';
-import { contributionFor } from '../logic/recurringTransfers';
+import { goalCurrent, goalMonthly } from '../logic/goals';
 import type { Goal } from '../db';
 
 // ---------- inline icons (ported from the prototype's SVG paths) ----------
@@ -70,6 +70,7 @@ const GOAL_GLYPHS: Array<React.ComponentType<IconProps>> = [ShieldIcon, HouseIco
 // ---------- helpers ----------
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtMonth = (iso: string): string => `${MONTH_ABBR[Number(iso.split('-')[1]) - 1]} ${iso.split('-')[0]}`;
 
 /** ~14% opacity tint of a #RRGGBB color for the icon square background. */
 const tint = (hex: string): string => `${hex}24`;
@@ -108,9 +109,11 @@ export function GoalsScreen() {
       {investGoals.map((g, i) => {
         const Glyph = GOAL_GLYPHS[i % GOAL_GLYPHS.length];
         const linked = g.accountId ? accounts.find((a) => a.id === g.accountId) ?? null : null;
-        const cur = linked ? (linked.balance ?? 0) : g.current;
-        const mo = g.contributionKey ? (contributionFor(g.contributionKey, recurringTransfers) ?? 0) : g.monthly;
+        const cur = goalCurrent(g, accounts);
+        const mo = goalMonthly(g, cur, recurringTransfers, today);
         const pct = g.target > 0 ? (cur / g.target) * 100 : 0;
+        const src = g.targetDate ? ` · by ${fmtMonth(g.targetDate)}` : g.contributionKey ? ' · auto' : '';
+        const done = g.targetDate ? (cur >= g.target ? 'Reached 🎉' : `Target ${fmtMonth(g.targetDate)}`) : completionLabel(cur, g.target, mo, today);
         return (
           <Pressable key={g.id} onPress={() => openEditor(g)}>
           <Card style={styles.goalCard}>
@@ -121,7 +124,7 @@ export function GoalsScreen() {
               <View style={styles.headMid}>
                 <Text style={styles.goalName} numberOfLines={1}>{g.name}</Text>
                 <Text style={styles.goalSub} numberOfLines={1}>
-                  <Money>{money(mo, { sign: true })}</Money> / mo{g.contributionKey ? ' · auto' : ''}{linked ? ` · ${displayName(linked)}` : ''}
+                  <Money>{money(mo, { sign: true })}</Money> / mo{src}{linked ? ` · ${displayName(linked)}` : ''}
                 </Text>
               </View>
               <Text style={[styles.goalPct, { color: g.color }]}>{Math.round(pct)}%</Text>
@@ -135,7 +138,7 @@ export function GoalsScreen() {
                 {' of '}
                 <Money>{money(g.target)}</Money>
               </Text>
-              <Text style={styles.footText}>{completionLabel(cur, g.target, mo, today)}</Text>
+              <Text style={styles.footText}>{done}</Text>
             </View>
           </Card>
           </Pressable>

@@ -40,6 +40,7 @@ export interface Goal {
   kind: 'goal' | 'retirement';
   accountId: string | null;       // when set, progress tracks this account's live balance
   contributionKey: string | null; // when set, monthly = the detected recurring transfer's amount
+  targetDate: string | null;      // when set (YYYY-MM-01), monthly = amount needed to hit target by then
 }
 
 /** The user's real setup, captured in onboarding. Drives income + tax estimates. */
@@ -118,7 +119,8 @@ async function openAndInit(): Promise<SQLite.SQLiteDatabase> {
       color   TEXT NOT NULL,
       kind    TEXT NOT NULL DEFAULT 'goal',
       accountId       TEXT,
-      contributionKey TEXT
+      contributionKey TEXT,
+      targetDate      TEXT
     );
     CREATE TABLE IF NOT EXISTS income (
       id     TEXT PRIMARY KEY NOT NULL,
@@ -158,6 +160,7 @@ async function openAndInit(): Promise<SQLite.SQLiteDatabase> {
   await addColumnIfMissing(db, 'goals', 'accountId', 'TEXT');
   await addColumnIfMissing(db, 'goals', 'contributionKey', 'TEXT');
   await addColumnIfMissing(db, 'categories', 'color', 'TEXT'); // user-picked envelope color (else auto)
+  await addColumnIfMissing(db, 'goals', 'targetDate', 'TEXT'); // deadline mode: compute monthly from a target date
   await seedIfEmpty(db);
   return db;
 }
@@ -368,18 +371,18 @@ export async function getGoals(): Promise<Goal[]> {
   return db.getAllAsync<Goal>('SELECT * FROM goals;');
 }
 
-export async function addGoal(f: { name: string; target: number; current: number; monthly: number; color: string; accountId?: string | null; contributionKey?: string | null }) {
+export async function addGoal(f: { name: string; target: number; current: number; monthly: number; color: string; accountId?: string | null; contributionKey?: string | null; targetDate?: string | null }) {
   const db = await getDb();
   await db.runAsync(
-    "INSERT INTO goals (id,name,target,current,monthly,color,kind,accountId,contributionKey) VALUES (?,?,?,?,?,?,'goal',?,?);",
-    [`goal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, f.name, f.target, f.current, f.monthly, f.color, f.accountId ?? null, f.contributionKey ?? null]
+    "INSERT INTO goals (id,name,target,current,monthly,color,kind,accountId,contributionKey,targetDate) VALUES (?,?,?,?,?,?,'goal',?,?,?);",
+    [`goal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, f.name, f.target, f.current, f.monthly, f.color, f.accountId ?? null, f.contributionKey ?? null, f.targetDate ?? null]
   );
 }
 
-export async function updateGoal(id: string, f: { name: string; target: number; current: number; monthly: number; color?: string; accountId?: string | null; contributionKey?: string | null }) {
+export async function updateGoal(id: string, f: { name: string; target: number; current: number; monthly: number; color?: string; accountId?: string | null; contributionKey?: string | null; targetDate?: string | null }) {
   const db = await getDb();
-  await db.runAsync('UPDATE goals SET name=?, target=?, current=?, monthly=?, color=COALESCE(?,color), accountId=?, contributionKey=? WHERE id=?;', [
-    f.name, f.target, f.current, f.monthly, f.color ?? null, f.accountId ?? null, f.contributionKey ?? null, id,
+  await db.runAsync('UPDATE goals SET name=?, target=?, current=?, monthly=?, color=COALESCE(?,color), accountId=?, contributionKey=?, targetDate=? WHERE id=?;', [
+    f.name, f.target, f.current, f.monthly, f.color ?? null, f.accountId ?? null, f.contributionKey ?? null, f.targetDate ?? null, id,
   ]);
 }
 

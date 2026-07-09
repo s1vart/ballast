@@ -76,8 +76,8 @@ export interface BallastData {
   addRecurring: (name: string, category: string, amount: number, dayOfMonth: number) => Promise<void>;
   updateRecurring: (id: string, f: { name: string; category: string; amount: number; dayOfMonth: number }) => Promise<void>;
   deleteRecurring: (id: string) => Promise<void>;
-  addGoal: (f: { name: string; target: number; current: number; monthly: number; color: string; accountId?: string | null; contributionKey?: string | null }) => Promise<void>;
-  updateGoal: (id: string, f: { name: string; target: number; current: number; monthly: number; color?: string; accountId?: string | null; contributionKey?: string | null }) => Promise<void>;
+  addGoal: (f: { name: string; target: number; current: number; monthly: number; color: string; accountId?: string | null; contributionKey?: string | null; targetDate?: string | null }) => Promise<void>;
+  updateGoal: (id: string, f: { name: string; target: number; current: number; monthly: number; color?: string; accountId?: string | null; contributionKey?: string | null; targetDate?: string | null }) => Promise<void>;
   deleteGoal: (id: string) => Promise<void>;
   addIncome: (f: { kind: db.IncomeKind; label: string; amount: number; date: string }) => Promise<void>;
   deleteIncome: (id: string) => Promise<void>;
@@ -173,8 +173,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addRecurring = useCallback(async (name: string, category: string, amount: number, dayOfMonth: number) => { await db.addRecurring(name, category, amount, dayOfMonth); await refresh(); }, [refresh]);
   const updateRecurring = useCallback(async (id: string, f: { name: string; category: string; amount: number; dayOfMonth: number }) => { await db.updateRecurring(id, f); await refresh(); }, [refresh]);
   const deleteRecurring = useCallback(async (id: string) => { await db.deleteRecurring(id); await refresh(); }, [refresh]);
-  const addGoal = useCallback(async (f: { name: string; target: number; current: number; monthly: number; color: string; accountId?: string | null; contributionKey?: string | null }) => { await db.addGoal(f); await refresh(); }, [refresh]);
-  const updateGoal = useCallback(async (id: string, f: { name: string; target: number; current: number; monthly: number; color?: string; accountId?: string | null; contributionKey?: string | null }) => { await db.updateGoal(id, f); await refresh(); }, [refresh]);
+  const addGoal = useCallback(async (f: { name: string; target: number; current: number; monthly: number; color: string; accountId?: string | null; contributionKey?: string | null; targetDate?: string | null }) => { await db.addGoal(f); await refresh(); }, [refresh]);
+  const updateGoal = useCallback(async (id: string, f: { name: string; target: number; current: number; monthly: number; color?: string; accountId?: string | null; contributionKey?: string | null; targetDate?: string | null }) => { await db.updateGoal(id, f); await refresh(); }, [refresh]);
   const deleteGoal = useCallback(async (id: string) => { await db.deleteGoal(id); await refresh(); }, [refresh]);
   const addIncome = useCallback(async (f: { kind: db.IncomeKind; label: string; amount: number; date: string }) => { await db.addIncome(f); await refresh(); }, [refresh]);
   const deleteIncome = useCallback(async (id: string) => { await db.deleteIncome(id); await refresh(); }, [refresh]);
