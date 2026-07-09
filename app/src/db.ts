@@ -19,6 +19,7 @@ export interface Category {
   name: string;
   monthlyLimit: number;
   sort: number;
+  color: string | null; // user-picked; falls back to an auto color when null
 }
 
 export interface Txn {
@@ -91,7 +92,8 @@ async function openAndInit(): Promise<SQLite.SQLiteDatabase> {
       id           TEXT PRIMARY KEY NOT NULL,
       name         TEXT NOT NULL,
       monthlyLimit REAL NOT NULL,
-      sort         INTEGER NOT NULL DEFAULT 0
+      sort         INTEGER NOT NULL DEFAULT 0,
+      color        TEXT
     );
     CREATE TABLE IF NOT EXISTS txns (
       id         TEXT PRIMARY KEY NOT NULL,
@@ -155,6 +157,7 @@ async function openAndInit(): Promise<SQLite.SQLiteDatabase> {
   // goals can link to a real account (live balance) + a recurring transfer (contribution).
   await addColumnIfMissing(db, 'goals', 'accountId', 'TEXT');
   await addColumnIfMissing(db, 'goals', 'contributionKey', 'TEXT');
+  await addColumnIfMissing(db, 'categories', 'color', 'TEXT'); // user-picked envelope color (else auto)
   await seedIfEmpty(db);
   return db;
 }
@@ -290,17 +293,17 @@ export async function setCategoryLimit(id: string, monthlyLimit: number) {
   await db.runAsync('UPDATE categories SET monthlyLimit=? WHERE id=?;', [monthlyLimit, id]);
 }
 
-export async function addCategory(name: string, monthlyLimit: number) {
+export async function addCategory(name: string, monthlyLimit: number, color?: string | null) {
   const db = await getDb();
   const maxSort = await db.getFirstAsync<{ m: number | null }>('SELECT MAX(sort) m FROM categories;');
-  await db.runAsync('INSERT INTO categories (id,name,monthlyLimit,sort) VALUES (?,?,?,?);', [
-    `cat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, monthlyLimit, (maxSort?.m ?? -1) + 1,
+  await db.runAsync('INSERT INTO categories (id,name,monthlyLimit,sort,color) VALUES (?,?,?,?,?);', [
+    `cat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, monthlyLimit, (maxSort?.m ?? -1) + 1, color ?? null,
   ]);
 }
 
-export async function updateCategory(id: string, f: { name: string; monthlyLimit: number }) {
+export async function updateCategory(id: string, f: { name: string; monthlyLimit: number; color?: string | null }) {
   const db = await getDb();
-  await db.runAsync('UPDATE categories SET name=?, monthlyLimit=? WHERE id=?;', [f.name, f.monthlyLimit, id]);
+  await db.runAsync('UPDATE categories SET name=?, monthlyLimit=?, color=COALESCE(?,color) WHERE id=?;', [f.name, f.monthlyLimit, f.color ?? null, id]);
 }
 
 /** Deleting an envelope also removes its transactions (they'd be orphaned). */
@@ -373,10 +376,10 @@ export async function addGoal(f: { name: string; target: number; current: number
   );
 }
 
-export async function updateGoal(id: string, f: { name: string; target: number; current: number; monthly: number; accountId?: string | null; contributionKey?: string | null }) {
+export async function updateGoal(id: string, f: { name: string; target: number; current: number; monthly: number; color?: string; accountId?: string | null; contributionKey?: string | null }) {
   const db = await getDb();
-  await db.runAsync('UPDATE goals SET name=?, target=?, current=?, monthly=?, accountId=?, contributionKey=? WHERE id=?;', [
-    f.name, f.target, f.current, f.monthly, f.accountId ?? null, f.contributionKey ?? null, id,
+  await db.runAsync('UPDATE goals SET name=?, target=?, current=?, monthly=?, color=COALESCE(?,color), accountId=?, contributionKey=? WHERE id=?;', [
+    f.name, f.target, f.current, f.monthly, f.color ?? null, f.accountId ?? null, f.contributionKey ?? null, id,
   ]);
 }
 

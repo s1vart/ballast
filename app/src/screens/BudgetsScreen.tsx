@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { colors, paletteFor, radius, money } from '../theme';
+import { colors, paletteFor, ringPalette, radius, money } from '../theme';
 import { Card, Money, SectionHead, HBar, ProgressRing } from '../components/ui';
 import { EnvelopeManager } from '../components/EnvelopeManager';
 import { TransactionsList } from '../components/TransactionsList';
@@ -44,7 +44,7 @@ function PlusIcon({ size = 15, color = WHITE }: { size?: number; color?: string 
 
 // ---------- envelope card (one grid cell) ----------
 function EnvelopeCard({ cat, spent }: { cat: Category; spent: number }): React.ReactElement {
-  const pal = paletteFor(cat.id);
+  const pal = cat.color ? ringPalette(cat.color) : paletteFor(cat.id);
   const limit = cat.monthlyLimit;
   const pct = limit > 0 ? spent / limit : 0;
   const over = spent > limit;

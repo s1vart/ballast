@@ -57,7 +57,25 @@ export const CARD_COLORS = [
   '#4B2E83', // purple
   '#B45309', // amber/bronze
   '#334155', // slate
+  '#0B4A6F', // ocean
+  '#5B2A1E', // rust
+  '#2E7D5B', // emerald
+  '#6B2D5B', // plum
+  '#3A2E1E', // espresso
+  '#25455B', // steel
 ] as const;
+
+// Accent colors for goals + envelopes (readable as an icon/ring tint on light bg).
+export const ACCENT_COLORS = [
+  '#1C8C55', '#2E7D5B', '#0E5B57', '#2D6FB8', '#0B7EA8', '#2563EB',
+  '#7F77DD', '#7C3AED', '#D4537E', '#DB2777', '#E9A23B', '#D9822B',
+  '#C2410C', '#B45309', '#4B5563', '#0F766E',
+] as const;
+
+/** Ring/icon palette from a user-picked accent color (fill / tint track / text). */
+export function ringPalette(hex: string): { c: string; track: string; tx: string } {
+  return { c: hex, track: hex + '22', tx: hex };
+}
 
 /** Best-guess card color from the issuer/name so cards look distinct out of the box;
  *  the user can override it. */

@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { colors, money } from '../theme';
+import { colors, money, ACCENT_COLORS } from '../theme';
 import { BottomSheet, Field, Chip, PrimaryButton, DangerButton } from './sheets';
 import { useFeedback } from './Feedback';
 import { useData } from '../data/DataContext';
 import { isLiability, displayName } from '../types';
 import { contributionFor } from '../logic/recurringTransfers';
 import type { Goal } from '../db';
-
-const GOAL_COLORS = ['#1C8C55', '#2D6FB8', '#7F77DD', '#D4537E', '#E9A23B', '#0E5B57'];
 
 /** Add (goal=null) or edit a goal. A goal can link to a real account (progress
  *  tracks its live balance) and to a recurring transfer (its monthly contribution). */
@@ -19,7 +17,7 @@ export function GoalEditor({ visible, goal, onClose }: { visible: boolean; goal:
   const [target, setTarget] = useState('');
   const [current, setCurrent] = useState('');
   const [monthly, setMonthly] = useState('');
-  const [color, setColor] = useState(GOAL_COLORS[0]);
+  const [color, setColor] = useState<string>(ACCENT_COLORS[0]);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [contributionKey, setContributionKey] = useState<string | null>(null);
   const [autoContribution, setAutoContribution] = useState(false);
@@ -33,7 +31,7 @@ export function GoalEditor({ visible, goal, onClose }: { visible: boolean; goal:
     setTarget(goal ? String(goal.target) : '');
     setCurrent(goal ? String(goal.current) : '');
     setMonthly(goal ? String(goal.monthly) : '');
-    setColor(goal?.color ?? GOAL_COLORS[0]);
+    setColor(goal?.color ?? ACCENT_COLORS[0]);
     setAccountId(goal?.accountId ?? null);
     setContributionKey(goal?.contributionKey ?? null);
     setAutoContribution(!!goal?.contributionKey);
@@ -57,9 +55,10 @@ export function GoalEditor({ visible, goal, onClose }: { visible: boolean; goal:
       monthly: autoContribution ? (detectedMonthly ?? 0) : (Number.isFinite(m) ? m : 0),
       accountId: accountId ?? null,
       contributionKey: autoContribution ? contributionKey : null,
+      color,
     };
     if (goal) await updateGoal(goal.id, payload);
-    else await addGoal({ ...payload, color });
+    else await addGoal(payload);
     onClose();
   };
 
@@ -109,13 +108,12 @@ export function GoalEditor({ visible, goal, onClose }: { visible: boolean; goal:
         <Field label="Amount / month" value={monthly} onChangeText={setMonthly} placeholder="500" keyboardType="decimal-pad" money />
       )}
 
-      {!goal ? (
-        <View style={styles.colors}>
-          {GOAL_COLORS.map((cc) => (
-            <Pressable key={cc} onPress={() => setColor(cc)} style={[styles.swatch, { backgroundColor: cc }, color === cc && styles.swatchOn]} />
-          ))}
-        </View>
-      ) : null}
+      <Text style={styles.section}>Color</Text>
+      <View style={styles.colors}>
+        {ACCENT_COLORS.map((cc) => (
+          <Pressable key={cc} onPress={() => setColor(cc)} style={[styles.swatch, { backgroundColor: cc }, color === cc && styles.swatchOn]} />
+        ))}
+      </View>
 
       <PrimaryButton label={goal ? 'Save goal' : 'Add goal'} disabled={!valid} onPress={save} />
       {goal ? (
@@ -135,7 +133,7 @@ const styles = StyleSheet.create({
   section: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase', color: colors.greige, marginTop: 18, marginBottom: 10 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   note: { fontSize: 12.5, color: colors.greige, lineHeight: 18, marginTop: 10 },
-  colors: { flexDirection: 'row', gap: 12, marginTop: 18 },
+  colors: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 10 },
   swatch: { width: 30, height: 30, borderRadius: 8 },
   swatchOn: { borderWidth: 3, borderColor: colors.ink },
 });
