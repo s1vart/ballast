@@ -107,3 +107,10 @@ export async function setCursor(itemId, cursor) {
     await persist();
   }
 }
+
+export async function removeItem(itemId) {
+  if (db.items[itemId]) {
+    delete db.items[itemId];
+    await persist();
+  }
+}

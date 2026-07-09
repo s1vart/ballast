@@ -268,6 +268,14 @@ export async function upsertAccounts(accounts: Account[]) {
         [a.id, a.name, a.type ?? null, a.subtype ?? null, a.mask ?? null, a.balance ?? null, a.institution ?? null, a.source]
       );
     }
+    // Reconcile: drop Plaid accounts no longer returned (removed items, or dupes
+    // from a re-auth). Never touches manual accounts.
+    const ids = accounts.map((a) => a.id);
+    if (ids.length) {
+      await db.runAsync(`DELETE FROM accounts WHERE source='plaid' AND id NOT IN (${ids.map(() => '?').join(',')});`, ids);
+    } else {
+      await db.runAsync("DELETE FROM accounts WHERE source='plaid';");
+    }
   });
 }
 

@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { plaid } from './plaidClient.js';
-import { saveItem, getItems, setCursor, initStore } from './store.js';
+import { saveItem, getItems, setCursor, removeItem, initStore } from './store.js';
 
 // --- Fail-fast env validation -----------------------------------------------
 // This server guards real bank data. Refuse to boot half-configured — an unset
@@ -112,6 +112,17 @@ app.post('/item/exchange', async (req, res) => {
         institution = i.data.institution.name;
       }
     } catch { /* institution name is best-effort */ }
+
+    // Re-auth of an already-linked institution: replace the old item instead of
+    // duplicating its accounts. Free the old one on Plaid too (Trial 10-item cap).
+    if (institution) {
+      for (const it of getItems()) {
+        if (it.institution === institution && it.item_id !== item_id) {
+          try { await plaid.itemRemove({ access_token: it.access_token }); } catch { /* best-effort */ }
+          await removeItem(it.item_id);
+        }
+      }
+    }
 
     await saveItem({ item_id, access_token, institution, cursor: null });
     res.json({ item_id, institution });
