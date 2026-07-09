@@ -8,6 +8,7 @@ import {
 } from '../logic/finance';
 import { TaxEstimate } from '../logic/tax';
 import { summarizeProfile } from '../logic/profile';
+import { detectRecurringTransfers, RecurringTransfer } from '../logic/recurringTransfers';
 import { fetchPlaidAccounts, fetchTxnSync } from '../api';
 import { connectBank } from '../plaidLink';
 
@@ -35,6 +36,7 @@ export interface BallastData {
   pendingByAccount: Record<string, number>;
   recurring: Recurring[];
   goals: db.Goal[];
+  recurringTransfers: RecurringTransfer[];
   income: db.Income[];
   paycheckConfig: PaycheckConfig;
   breakdown: PaycheckBreakdown;
@@ -74,8 +76,8 @@ export interface BallastData {
   addRecurring: (name: string, category: string, amount: number, dayOfMonth: number) => Promise<void>;
   updateRecurring: (id: string, f: { name: string; category: string; amount: number; dayOfMonth: number }) => Promise<void>;
   deleteRecurring: (id: string) => Promise<void>;
-  addGoal: (f: { name: string; target: number; current: number; monthly: number; color: string }) => Promise<void>;
-  updateGoal: (id: string, f: { name: string; target: number; current: number; monthly: number }) => Promise<void>;
+  addGoal: (f: { name: string; target: number; current: number; monthly: number; color: string; accountId?: string | null; contributionKey?: string | null }) => Promise<void>;
+  updateGoal: (id: string, f: { name: string; target: number; current: number; monthly: number; accountId?: string | null; contributionKey?: string | null }) => Promise<void>;
   deleteGoal: (id: string) => Promise<void>;
   addIncome: (f: { kind: db.IncomeKind; label: string; amount: number; date: string }) => Promise<void>;
   deleteIncome: (id: string) => Promise<void>;
@@ -169,8 +171,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addRecurring = useCallback(async (name: string, category: string, amount: number, dayOfMonth: number) => { await db.addRecurring(name, category, amount, dayOfMonth); await refresh(); }, [refresh]);
   const updateRecurring = useCallback(async (id: string, f: { name: string; category: string; amount: number; dayOfMonth: number }) => { await db.updateRecurring(id, f); await refresh(); }, [refresh]);
   const deleteRecurring = useCallback(async (id: string) => { await db.deleteRecurring(id); await refresh(); }, [refresh]);
-  const addGoal = useCallback(async (f: { name: string; target: number; current: number; monthly: number; color: string }) => { await db.addGoal(f); await refresh(); }, [refresh]);
-  const updateGoal = useCallback(async (id: string, f: { name: string; target: number; current: number; monthly: number }) => { await db.updateGoal(id, f); await refresh(); }, [refresh]);
+  const addGoal = useCallback(async (f: { name: string; target: number; current: number; monthly: number; color: string; accountId?: string | null; contributionKey?: string | null }) => { await db.addGoal(f); await refresh(); }, [refresh]);
+  const updateGoal = useCallback(async (id: string, f: { name: string; target: number; current: number; monthly: number; accountId?: string | null; contributionKey?: string | null }) => { await db.updateGoal(id, f); await refresh(); }, [refresh]);
   const deleteGoal = useCallback(async (id: string) => { await db.deleteGoal(id); await refresh(); }, [refresh]);
   const addIncome = useCallback(async (f: { kind: db.IncomeKind; label: string; amount: number; date: string }) => { await db.addIncome(f); await refresh(); }, [refresh]);
   const deleteIncome = useCallback(async (id: string) => { await db.deleteIncome(id); await refresh(); }, [refresh]);
@@ -183,6 +185,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // from the reported balance, so we fold it in ourselves for cards.
     const pendingByAccount: Record<string, number> = {};
     for (const t of transactions) if (t.pending && t.accountId) pendingByAccount[t.accountId] = (pendingByAccount[t.accountId] ?? 0) + t.amount;
+    const recurringTransfers = detectRecurringTransfers(transactions);
     const cardDebt = accounts.filter(isLiability).reduce((s, a) => s + (a.balance ?? 0) + (pendingByAccount[a.id] ?? 0), 0);
     const investmentsTotal = accounts.filter(isInvestment).reduce((s, a) => s + (a.balance ?? 0), 0);
     const netWorth = totalCash + investmentsTotal - cardDebt;
@@ -213,7 +216,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     return {
       loading, onboarded, profile,
-      accounts, categories, spentByCategory, avgSpendByCategory, transactions, pendingByAccount, recurring, goals, income,
+      accounts, categories, spentByCategory, avgSpendByCategory, transactions, pendingByAccount, recurring, goals, recurringTransfers, income,
       paycheckConfig, breakdown, savingsTransfer,
       totalCash, cardDebt, investmentsTotal, netWorth, checkingBalance, monthlyNetIncome,
       projection: projectEndOfMonth(input),

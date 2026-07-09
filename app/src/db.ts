@@ -33,10 +33,12 @@ export interface Goal {
   id: string;
   name: string;
   target: number;
-  current: number;
-  monthly: number;
+  current: number;          // manual fallback; overridden by the linked account balance
+  monthly: number;          // manual fallback; overridden by the detected recurring transfer
   color: string;
   kind: 'goal' | 'retirement';
+  accountId: string | null;       // when set, progress tracks this account's live balance
+  contributionKey: string | null; // when set, monthly = the detected recurring transfer's amount
 }
 
 /** The user's real setup, captured in onboarding. Drives income + tax estimates. */
@@ -112,7 +114,9 @@ async function openAndInit(): Promise<SQLite.SQLiteDatabase> {
       current REAL NOT NULL,
       monthly REAL NOT NULL,
       color   TEXT NOT NULL,
-      kind    TEXT NOT NULL DEFAULT 'goal'
+      kind    TEXT NOT NULL DEFAULT 'goal',
+      accountId       TEXT,
+      contributionKey TEXT
     );
     CREATE TABLE IF NOT EXISTS income (
       id     TEXT PRIMARY KEY NOT NULL,
@@ -148,6 +152,9 @@ async function openAndInit(): Promise<SQLite.SQLiteDatabase> {
   // pinned = user set its category by hand, so auto-recategorize won't touch it.
   await addColumnIfMissing(db, 'transactions', 'excluded', 'INTEGER NOT NULL DEFAULT 0');
   await addColumnIfMissing(db, 'transactions', 'pinned', 'INTEGER NOT NULL DEFAULT 0');
+  // goals can link to a real account (live balance) + a recurring transfer (contribution).
+  await addColumnIfMissing(db, 'goals', 'accountId', 'TEXT');
+  await addColumnIfMissing(db, 'goals', 'contributionKey', 'TEXT');
   await seedIfEmpty(db);
   return db;
 }
@@ -358,18 +365,18 @@ export async function getGoals(): Promise<Goal[]> {
   return db.getAllAsync<Goal>('SELECT * FROM goals;');
 }
 
-export async function addGoal(f: { name: string; target: number; current: number; monthly: number; color: string }) {
+export async function addGoal(f: { name: string; target: number; current: number; monthly: number; color: string; accountId?: string | null; contributionKey?: string | null }) {
   const db = await getDb();
   await db.runAsync(
-    "INSERT INTO goals (id,name,target,current,monthly,color,kind) VALUES (?,?,?,?,?,?,'goal');",
-    [`goal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, f.name, f.target, f.current, f.monthly, f.color]
+    "INSERT INTO goals (id,name,target,current,monthly,color,kind,accountId,contributionKey) VALUES (?,?,?,?,?,?,'goal',?,?);",
+    [`goal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, f.name, f.target, f.current, f.monthly, f.color, f.accountId ?? null, f.contributionKey ?? null]
   );
 }
 
-export async function updateGoal(id: string, f: { name: string; target: number; current: number; monthly: number }) {
+export async function updateGoal(id: string, f: { name: string; target: number; current: number; monthly: number; accountId?: string | null; contributionKey?: string | null }) {
   const db = await getDb();
-  await db.runAsync('UPDATE goals SET name=?, target=?, current=?, monthly=? WHERE id=?;', [
-    f.name, f.target, f.current, f.monthly, id,
+  await db.runAsync('UPDATE goals SET name=?, target=?, current=?, monthly=?, accountId=?, contributionKey=? WHERE id=?;', [
+    f.name, f.target, f.current, f.monthly, f.accountId ?? null, f.contributionKey ?? null, id,
   ]);
 }
 

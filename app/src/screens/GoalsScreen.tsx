@@ -5,6 +5,8 @@ import { colors, money } from '../theme';
 import { Card, Money, SectionHead, HBar } from '../components/ui';
 import { GoalEditor } from '../components/GoalEditor';
 import { useData } from '../data/DataContext';
+import { displayName } from '../types';
+import { contributionFor } from '../logic/recurringTransfers';
 import type { Goal } from '../db';
 
 // ---------- inline icons (ported from the prototype's SVG paths) ----------
@@ -73,10 +75,10 @@ const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
 const tint = (hex: string): string => `${hex}24`;
 
 /** "Done ~Mar 2027" / "10+ yrs" / "Reached 🎉" projection for a goal's footer. */
-function completionLabel(g: Goal, today: Date): string {
-  if (g.current >= g.target) return 'Reached 🎉';
-  if (g.monthly <= 0) return '—';
-  const months = Math.ceil((g.target - g.current) / g.monthly);
+function completionLabel(current: number, target: number, monthly: number, today: Date): string {
+  if (current >= target) return 'Reached 🎉';
+  if (monthly <= 0) return '—';
+  const months = Math.ceil((target - current) / monthly);
   if (months > 120) return '10+ yrs';
   const done = new Date(today.getFullYear(), today.getMonth() + months, 1);
   return `Done ~${MONTH_ABBR[done.getMonth()]} ${done.getFullYear()}`;
@@ -85,7 +87,7 @@ function completionLabel(g: Goal, today: Date): string {
 // ---------- screen ----------
 
 export function GoalsScreen() {
-  const { goals, breakdown, paycheckConfig, today } = useData();
+  const { goals, accounts, recurringTransfers, breakdown, paycheckConfig, today } = useData();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorGoal, setEditorGoal] = useState<Goal | null>(null);
   const openEditor = (g: Goal | null) => { setEditorGoal(g); setEditorOpen(true); };
@@ -105,7 +107,10 @@ export function GoalsScreen() {
 
       {investGoals.map((g, i) => {
         const Glyph = GOAL_GLYPHS[i % GOAL_GLYPHS.length];
-        const pct = g.target > 0 ? (g.current / g.target) * 100 : 0;
+        const linked = g.accountId ? accounts.find((a) => a.id === g.accountId) ?? null : null;
+        const cur = linked ? (linked.balance ?? 0) : g.current;
+        const mo = g.contributionKey ? (contributionFor(g.contributionKey, recurringTransfers) ?? 0) : g.monthly;
+        const pct = g.target > 0 ? (cur / g.target) * 100 : 0;
         return (
           <Pressable key={g.id} onPress={() => openEditor(g)}>
           <Card style={styles.goalCard}>
@@ -115,8 +120,8 @@ export function GoalsScreen() {
               </View>
               <View style={styles.headMid}>
                 <Text style={styles.goalName} numberOfLines={1}>{g.name}</Text>
-                <Text style={styles.goalSub}>
-                  <Money>{money(g.monthly, { sign: true })}</Money> / mo
+                <Text style={styles.goalSub} numberOfLines={1}>
+                  <Money>{money(mo, { sign: true })}</Money> / mo{g.contributionKey ? ' · auto' : ''}{linked ? ` · ${displayName(linked)}` : ''}
                 </Text>
               </View>
               <Text style={[styles.goalPct, { color: g.color }]}>{Math.round(pct)}%</Text>
@@ -126,11 +131,11 @@ export function GoalsScreen() {
             </View>
             <View style={styles.foot}>
               <Text style={styles.footText}>
-                <Money style={styles.footBold}>{money(g.current)}</Money>
+                <Money style={styles.footBold}>{money(cur)}</Money>
                 {' of '}
                 <Money>{money(g.target)}</Money>
               </Text>
-              <Text style={styles.footText}>{completionLabel(g, today)}</Text>
+              <Text style={styles.footText}>{completionLabel(cur, g.target, mo, today)}</Text>
             </View>
           </Card>
           </Pressable>
