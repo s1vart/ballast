@@ -67,6 +67,7 @@ export interface BallastData {
   deleteCategory: (id: string) => Promise<void>;
   syncTransactions: () => Promise<number>;
   reassignTransaction: (id: string, envelopeId: string | null) => Promise<void>;
+  setTransactionExcluded: (id: string, excluded: boolean) => Promise<void>;
   syncBank: () => Promise<number>;
   linkBank: () => Promise<{ institution: string | null; count: number }>;
   restartOnboarding: () => Promise<void>;
@@ -152,6 +153,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const deleteCategory = useCallback(async (id: string) => { await db.deleteCategory(id); await refresh(); }, [refresh]);
   const syncTransactions = useCallback(async () => { const d = await fetchTxnSync(); await db.applyTxnSync(d); await refresh(); return d.added.length + d.modified.length; }, [refresh]);
   const reassignTransaction = useCallback(async (id: string, envelopeId: string | null) => { await db.setTxnEnvelope(id, envelopeId); await refresh(); }, [refresh]);
+  const setTransactionExcluded = useCallback(async (id: string, excluded: boolean) => { await db.setTxnExcluded(id, excluded); await refresh(); }, [refresh]);
   const linkBank = useCallback(async () => {
     const { institution } = await connectBank();          // opens Plaid Link natively
     const remote = await fetchPlaidAccounts();            // pull balances for all linked items
@@ -221,12 +223,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       tax, today,
       refresh, completeOnboarding, updateProfile,
       addExpense, addAccount, updateAccountMeta, updatePaycheck, setCategoryLimit, setBudgets, addCategory, updateCategory, deleteCategory,
-      syncTransactions, reassignTransaction, syncBank, linkBank, restartOnboarding,
+      syncTransactions, reassignTransaction, setTransactionExcluded, syncBank, linkBank, restartOnboarding,
       addRecurring, updateRecurring, deleteRecurring, addGoal, updateGoal, deleteGoal, addIncome, deleteIncome,
     };
   }, [loading, onboarded, profile, accounts, categories, spentByCategory, avgSpendByCategory, transactions, recurring, goals, income, paycheckConfig, savingsTransfer,
       refresh, completeOnboarding, updateProfile, addExpense, addAccount, updateAccountMeta, updatePaycheck, setCategoryLimit,
-      setBudgets, addCategory, updateCategory, deleteCategory, syncTransactions, reassignTransaction, syncBank, linkBank, restartOnboarding,
+      setBudgets, addCategory, updateCategory, deleteCategory, syncTransactions, reassignTransaction, setTransactionExcluded, syncBank, linkBank, restartOnboarding,
       addRecurring, updateRecurring, deleteRecurring, addGoal, updateGoal, deleteGoal, addIncome, deleteIncome]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

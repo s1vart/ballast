@@ -136,12 +136,18 @@ async function openAndInit(): Promise<SQLite.SQLiteDatabase> {
       pendingTxId TEXT,
       pfc         TEXT,
       pfcDetailed TEXT,
-      envelopeId  TEXT
+      envelopeId  TEXT,
+      excluded    INTEGER NOT NULL DEFAULT 0,
+      pinned      INTEGER NOT NULL DEFAULT 0
     );
   `);
   // Migrate older installs whose accounts table predates nickname/color.
   await addColumnIfMissing(db, 'accounts', 'nickname', 'TEXT');
   await addColumnIfMissing(db, 'accounts', 'color', 'TEXT');
+  // excluded = user marked it a bill/necessity (out of discretionary spend);
+  // pinned = user set its category by hand, so auto-recategorize won't touch it.
+  await addColumnIfMissing(db, 'transactions', 'excluded', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing(db, 'transactions', 'pinned', 'INTEGER NOT NULL DEFAULT 0');
   await seedIfEmpty(db);
   return db;
 }
@@ -423,6 +429,8 @@ export interface BankTxn {
   pfc: string | null;
   pfcDetailed: string | null;
   envelopeId: string | null;
+  excluded: number;      // 0/1 — user marked it a bill/necessity (not discretionary spend)
+  pinned: number;        // 0/1 — user set the category by hand; auto-recategorize skips it
 }
 
 // Shape the server's /transactions/sync returns for each added/modified txn.
@@ -466,8 +474,9 @@ export async function ensureStandardEnvelopes() {
 export async function recategorize() {
   const db = await getDb();
   const envelopes = await getCategories();
+  // pinned rows were set by the user — never auto-touch them.
   const rows = await db.getAllAsync<{ id: string; pfc: string | null; pfcDetailed: string | null; envelopeId: string | null }>(
-    'SELECT id, pfc, pfcDetailed, envelopeId FROM transactions;'
+    'SELECT id, pfc, pfcDetailed, envelopeId FROM transactions WHERE pinned=0;'
   );
   await db.withTransactionAsync(async () => {
     for (const r of rows) {
@@ -515,9 +524,21 @@ export async function getBankTxns(limit = 40): Promise<BankTxn[]> {
   return db.getAllAsync<BankTxn>('SELECT * FROM transactions ORDER BY pending DESC, date DESC, id DESC LIMIT ?;', [limit]);
 }
 
+// User assigns a spending envelope by hand → pin it, and it's spend (not a bill).
 export async function setTxnEnvelope(id: string, envelopeId: string | null) {
   const db = await getDb();
-  await db.runAsync('UPDATE transactions SET envelopeId=? WHERE id=?;', [envelopeId, id]);
+  await db.runAsync('UPDATE transactions SET envelopeId=?, excluded=0, pinned=1 WHERE id=?;', [envelopeId, id]);
+}
+
+// User marks a transaction as a bill/necessity (or unmarks it). When excluded it
+// leaves every spending envelope and never counts toward discretionary spend.
+export async function setTxnExcluded(id: string, excluded: boolean) {
+  const db = await getDb();
+  if (excluded) {
+    await db.runAsync('UPDATE transactions SET excluded=1, envelopeId=NULL, pinned=1 WHERE id=?;', [id]);
+  } else {
+    await db.runAsync('UPDATE transactions SET excluded=0, pinned=1 WHERE id=?;', [id]);
+  }
 }
 
 /** Average monthly spend per envelope over the last ~6 months of synced
@@ -526,7 +547,7 @@ export async function getAvgMonthlySpendByCategory(): Promise<Record<string, num
   const db = await getDb();
   const rows = await db.getAllAsync<{ envelopeId: string; date: string; amount: number }>(
     `SELECT envelopeId, date, amount FROM transactions
-     WHERE envelopeId IS NOT NULL AND amount > 0 AND date >= date('now','-6 months');`
+     WHERE envelopeId IS NOT NULL AND excluded=0 AND amount > 0 AND date >= date('now','-6 months');`
   );
   if (rows.length === 0) return {};
   const months = new Set(rows.map((r) => r.date.slice(0, 7)));
@@ -553,7 +574,7 @@ export async function getSyncedSpendByCategory(): Promise<Record<string, number>
   const db = await getDb();
   const rows = await db.getAllAsync<{ envelopeId: string; total: number }>(
     `SELECT envelopeId, SUM(amount) total FROM transactions
-     WHERE envelopeId IS NOT NULL AND amount > 0
+     WHERE envelopeId IS NOT NULL AND excluded=0 AND amount > 0
        AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
      GROUP BY envelopeId;`
   );

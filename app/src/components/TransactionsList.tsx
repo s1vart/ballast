@@ -16,10 +16,11 @@ function shortDate(iso: string): string {
   return `${MONTH[m - 1]} ${d}`;
 }
 
-/** Recent synced transactions: account, date, category, amount. Card payments &
- *  transfers are shown muted (not spending) so they don't look like double charges. */
+/** Recent synced transactions. Tap any one to recategorize: assign a spending
+ *  envelope, or mark it a bill/necessity so it's excluded from discretionary spend
+ *  (fixes cases where the bank mis-tags something like rent). */
 export function TransactionsList() {
-  const { transactions, categories, accounts, syncTransactions, reassignTransaction } = useData();
+  const { transactions, categories, accounts, syncTransactions, reassignTransaction, setTransactionExcluded } = useData();
   const { toast } = useFeedback();
   const [syncing, setSyncing] = useState(false);
   const [picking, setPicking] = useState<BankTxn | null>(null);
@@ -58,11 +59,13 @@ export function TransactionsList() {
       ) : (
         <View style={styles.list}>
           {transactions.map((t) => {
-            const nonSpend = isTransfer(t.pfc) || isFixed(t.pfc);
+            const bill = t.excluded === 1;
+            const auto = isTransfer(t.pfc) || isFixed(t.pfc);
+            const nonSpend = bill || auto;
             const inflow = t.amount < 0;
-            const label = nonSpend ? humanizeCategory(t.pfc, t.pfcDetailed) : catName(t.envelopeId) ?? humanizeCategory(t.pfc, t.pfcDetailed);
+            const label = bill ? 'Bill' : auto ? humanizeCategory(t.pfc, t.pfcDetailed) : catName(t.envelopeId) ?? humanizeCategory(t.pfc, t.pfcDetailed);
             return (
-              <View key={t.id} style={styles.row}>
+              <Pressable key={t.id} onPress={() => setPicking(t)} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
                 <View style={styles.rowMain}>
                   <Text style={[styles.merchant, nonSpend && styles.muted]} numberOfLines={1}>{t.merchant || t.name}</Text>
                   <View style={styles.metaRow}>
@@ -71,40 +74,43 @@ export function TransactionsList() {
                     <Text style={styles.date}>{shortDate(t.date)}</Text>
                     {t.pending ? <View style={styles.pendingPill}><Text style={styles.pendingTx}>Pending</Text></View> : null}
                   </View>
-                  {nonSpend ? (
-                    <Text style={styles.transferTag}>{label}</Text>
-                  ) : (
-                    <Pressable onPress={() => setPicking(t)} hitSlop={6} style={styles.catChipWrap}>
-                      <Text style={styles.catChip}>{label}</Text>
-                    </Pressable>
-                  )}
+                  <Text style={[styles.tag, nonSpend ? styles.tagMuted : styles.tagSpend]}>{label}</Text>
                 </View>
                 <Text style={[styles.amount, nonSpend ? styles.amountMuted : inflow ? styles.amountIn : styles.amountOut]}>
                   {nonSpend ? '' : inflow ? '+' : ''}{money(Math.abs(t.amount))}
                 </Text>
-              </View>
+              </Pressable>
             );
           })}
         </View>
       )}
 
-      {/* Re-assign envelope sheet */}
-      <BottomSheet visible={picking !== null} onClose={() => setPicking(null)} title="Assign to envelope">
+      {/* Recategorize sheet */}
+      <BottomSheet visible={picking !== null} onClose={() => setPicking(null)} title="Categorize">
         {picking ? (
           <>
             <Text style={styles.pickSub}>{picking.merchant || picking.name} · {money(Math.abs(picking.amount))}</Text>
+            <Text style={styles.pickHint}>Put it in a spending envelope, or mark it a bill/necessity so it doesn't count toward spending.</Text>
             <View style={styles.chips}>
               {categories.map((c) => (
                 <Chip
                   key={c.id}
                   label={c.name}
-                  selected={picking.envelopeId === c.id}
+                  selected={picking.excluded !== 1 && picking.envelopeId === c.id}
                   onPress={async () => { await reassignTransaction(picking.id, c.id); setPicking(null); }}
                 />
               ))}
+            </View>
+            <Text style={styles.pickDivider}>Not spending</Text>
+            <View style={styles.chips}>
+              <Chip
+                label="Bill / necessity"
+                selected={picking.excluded === 1}
+                onPress={async () => { await setTransactionExcluded(picking.id, true); setPicking(null); }}
+              />
               <Chip
                 label="Uncategorized"
-                selected={picking.envelopeId === null}
+                selected={picking.excluded !== 1 && picking.envelopeId === null}
                 onPress={async () => { await reassignTransaction(picking.id, null); setPicking(null); }}
               />
             </View>
@@ -121,6 +127,7 @@ const styles = StyleSheet.create({
   empty: { fontSize: 13, color: colors.greige, lineHeight: 19, paddingVertical: 10, paddingHorizontal: 2 },
   list: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: colors.lineSoft, gap: 12 },
+  rowPressed: { backgroundColor: colors.lineSoft },
   rowMain: { flex: 1, minWidth: 0 },
   merchant: { fontSize: 14, fontWeight: '600', color: colors.ink },
   muted: { color: colors.inkSoft },
@@ -130,13 +137,15 @@ const styles = StyleSheet.create({
   date: { fontSize: 11.5, color: colors.faint, fontWeight: '500' },
   pendingPill: { backgroundColor: colors.warn + '22', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 2 },
   pendingTx: { fontSize: 9.5, fontWeight: '700', color: '#9A6B15', letterSpacing: 0.3, textTransform: 'uppercase' },
-  catChipWrap: { alignSelf: 'flex-start', marginTop: 6 },
-  catChip: { fontSize: 11.5, fontWeight: '700', color: colors.teal, backgroundColor: colors.mintBg, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden' },
-  transferTag: { alignSelf: 'flex-start', marginTop: 6, fontSize: 10.5, fontWeight: '700', color: colors.greige, backgroundColor: colors.lineSoft, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden', letterSpacing: 0.2, textTransform: 'uppercase' },
+  tag: { alignSelf: 'flex-start', marginTop: 6, fontSize: 11.5, fontWeight: '700', borderRadius: 7, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden' },
+  tagSpend: { color: colors.teal, backgroundColor: colors.mintBg },
+  tagMuted: { color: colors.greige, backgroundColor: colors.lineSoft },
   amount: { fontSize: 14.5, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.2 },
   amountOut: { color: colors.ink },
   amountIn: { color: colors.good },
   amountMuted: { color: colors.faint, fontWeight: '600' },
-  pickSub: { fontSize: 13, color: colors.greige, fontWeight: '500', marginTop: 2, marginBottom: 4 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  pickSub: { fontSize: 13, color: colors.greige, fontWeight: '500', marginTop: 2 },
+  pickHint: { fontSize: 12.5, color: colors.greige, lineHeight: 18, marginTop: 6, marginBottom: 4 },
+  pickDivider: { fontSize: 11, fontWeight: '700', color: colors.faint, textTransform: 'uppercase', letterSpacing: 0.4, marginTop: 16, marginBottom: 2 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
 });
