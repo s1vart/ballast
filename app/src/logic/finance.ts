@@ -53,8 +53,8 @@ export interface TrajectoryPoint {
 
 /**
  * Daily balance trajectory for the current month (drives the Home chart).
- * Model: paycheck lands on the 15th and last day (half each); each bill hits
- * its dayOfMonth; variable spend accrues evenly; transfer leaves on the 1st.
+ * Model: paycheck lands on the 1st; each bill hits its dayOfMonth; variable
+ * spend accrues evenly; savings transfer leaves on the 1st.
  * `today` anchors the curve: balance(today) === startingBalance.
  */
 export function monthTrajectory(
@@ -66,9 +66,7 @@ export function monthTrajectory(
   const dailyVariable = p.variableBudget / daysInMonth;
   const delta = (day: number): number => {
     let d = -dailyVariable;
-    if (day === 1) d -= p.savingsTransfer;
-    if (day === 15) d += p.netMonthly / 2;
-    if (day === daysInMonth) d += p.netMonthly / 2;
+    if (day === 1) d += p.netMonthly - p.savingsTransfer; // single paycheck in + savings out on the 1st
     for (const b of bills) if (b.dayOfMonth === day) d -= b.amount;
     return d;
   };
